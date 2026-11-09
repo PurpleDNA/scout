@@ -164,3 +164,21 @@ def test_a_marked_duplicate_wins_over_an_open_one(tmp_path, monkeypatch):
     assert [j["id"] for j in r.recommend(status="applied")["jobs"]] == [other]
     assert r.recommend()["total"] == 0  # The role you applied to doesn't come back as new through its twin.
 
+
+def test_reasons_belong_to_dislikes_and_reset_when_the_reaction_changes(tmp_path, monkeypatch):
+    db, p = setup(tmp_path, monkeypatch, [job(1, "Senior React Engineer", location="Lagos", description="Angular and Java. 6+ years of experience"),
+                                          job(2, "Developer", location="Lagos")])
+    store.reprocess(db)
+    assert not store.set_reason(db, "t:1", "stack")  # Nothing to explain yet.
+    store.set_feedback(db, "t:1", "dislike")
+    assert store.set_reason(db, "t:1", "stack")
+    assert store.dislikes(db).stack >= {"angular", "java"} and store.dislikes(db).general is None
+    store.set_reason(db, "t:1", "seniority")
+    d = store.dislikes(db)
+    assert (d.level, d.years, d.stack) == (3.0, 6, frozenset())
+    assert Ranker(db, p).recommend(status="dislike")["jobs"][0]["reason"] == "seniority"
+    store.set_feedback(db, "t:1", "dislike")
+    assert store.dislikes(db).level == 3.0  # Repeating keeps the reason.
+    store.set_feedback(db, "t:1", "like")
+    store.set_feedback(db, "t:1", "dislike")
+    assert store.dislikes(db).general is not None  # A fresh dislike starts without one.

@@ -50,7 +50,7 @@ class Ranker:
         self._load()
         fb = store.feedback_map(self.db)
         liked = store.feedback_vectors(self.db, ("like", "applied"))
-        disliked = store.feedback_vectors(self.db, ("dislike",))
+        disliked = store.dislikes(self.db)
         scores = score_jobs(self.jobs, self.titles, self.texts, self.profile, liked, disliked)
         excluded = {c.lower() for c in self.profile.data.get("exclude_companies", [])}
         terms = query.lower().split()
@@ -85,7 +85,8 @@ class Ranker:
             if lane and job["lane"] != lane:
                 continue
             results.append({**job, **s, "state": state, "marked_at": mark["at"] if mark else None,
-                            "stage": mark["stage"] if mark else None, "stage_at": mark["stage_at"] if mark else None})
+                            "stage": mark["stage"] if mark else None, "stage_at": mark["stage_at"] if mark else None,
+                            "reason": mark["reason"] if mark else None})
         results = sorted(results, key=lambda r: r["posted_at"] or "", reverse=True) if sort == "newest" else diversify(results)
         return {"total": len(results), "counts": counts, "jobs": results[:limit], "last_ingest": self._loaded_at,
                 "reactions": {a: states.count(a) for a in ("like", "applied", "dislike")},

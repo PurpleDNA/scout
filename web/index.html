@@ -93,6 +93,8 @@ h3{font-size:13px;margin:0 0 8px;font-weight:650}
 #toast{position:fixed;left:50%;bottom:44px;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:8px 8px 8px 14px;border-radius:8px;display:none;align-items:center;gap:12px;font-size:13px;z-index:1;max-width:92vw}
 #toast.show{display:flex}
 #toast button{background:none;border:0;color:inherit;text-decoration:underline;font-weight:600;padding:4px 6px}
+#toast{flex-wrap:wrap}#toast .why{text-decoration:none;border:1px solid color-mix(in srgb,var(--bg) 40%,transparent);border-radius:6px;font-weight:500}
+#toast .why:hover{border-color:var(--bg)}#toast kbd{color:inherit;opacity:.6;margin-right:4px}
 footer{padding:5px 16px;border-top:1px solid var(--line);color:var(--muted);font-size:12px;display:flex;justify-content:space-between;gap:12px;background:var(--panel)}
 kbd{font:inherit;font-weight:600;color:var(--ink)}
 .back,.toggle{display:none}
@@ -145,6 +147,8 @@ const SCOPE={worldwide:'Worldwide',nigeria:'Nigeria',africa:'Africa',emea:'EMEA'
 const TYPE={full_time:'Full-time',part_time:'Part-time',contract:'Contract',internship:'Internship or trainee'};
 const STAGE={'':'No reply yet',in_progress:'In progress',rejected:'Rejected',hired:'Hired'};
 const STAGE_CHIP={'':'',in_progress:'warn',rejected:'bad',hired:'good'};
+const REASON={location:'Not open to me',role:'Wrong role',stack:'Wrong stack',seniority:'Too senior'};
+const LEVEL={0:'trainee',1:'junior',3:'senior',4:'lead or staff',5:'director'};
 const PARTS={role:'Title',profile:'Background',skills:'Skills',seniority:'Seniority',industry:'Industry',freshness:'Freshness'};
 const FILTER_DEFAULTS={work:'',employment:'',posted:'',min:'60',sort:'best'};
 const state={lane:'',view:'new',jobs:[],selected:null,counts:{},reactions:{},stages:{}};
@@ -170,7 +174,8 @@ function renderSegs(){
   $('views').replaceChildren(...[['new','To review',null],['like','Liked',state.reactions.like],['applied','Applied',state.reactions.applied],['dislike','Not for me',state.reactions.dislike]].map(([v,n,c])=>h('button',{'aria-pressed':String(state.view===v),onclick(){state.view=v;state.selected=null;load()}},n,c?h('b',{},String(c)):null)));
 }
 // Where an application stands, and whether the listing is still up. Shown only in your own lists.
-function trackChips(j){if(state.view!=='applied'&&state.view!=='like')return null;const out=[];
+function trackChips(j){if(state.view==='dislike')return j.reason?h('span',{class:'chip miss'},REASON[j.reason]):null;
+  if(state.view!=='applied'&&state.view!=='like')return null;const out=[];
   if(j.state==='applied'){const g=j.stage||'';out.push(h('span',{class:'chip '+STAGE_CHIP[g]},g?STAGE[g]:'Applied '+ago(j.marked_at)))}
   if(j.closed)out.push(h('span',{class:'chip miss'},'Listing closed'));else if(j.stale)out.push(h('span',{class:'chip miss'},'Over 60 days old'));return out}
 function row(j){return h('li',{class:'row'+(j.id===state.selected?' on':''),'data-id':j.id},
@@ -186,21 +191,38 @@ function emptyState(){const views={like:['No liked jobs yet','Like a job and it 
 function renderList(){const l=$('list');$('reset').hidden=!hasFilters();if(!state.jobs.length){l.replaceChildren(emptyState());state.selected=null;renderDetail();return}if(!current())state.selected=state.jobs[0].id;l.replaceChildren(...state.jobs.map(row));renderDetail()}
 function select(id,open){state.selected=id;document.querySelectorAll('.row').forEach(r=>{const on=r.dataset.id===id;r.classList.toggle('on',on);r.querySelector('.pick').setAttribute('aria-current',String(on))});document.querySelector('.row.on')?.scrollIntoView({block:'nearest'});renderDetail();if(open)document.body.classList.add('reading')}
 function move(step){const i=state.jobs.findIndex(j=>j.id===state.selected);const n=state.jobs[Math.max(0,Math.min(i+step,state.jobs.length-1))];if(n)select(n.id)}
-function toast(msg,undo){const t=$('toast');t.replaceChildren(h('span',{},msg));if(undo)t.append(h('button',{onclick(){t.classList.remove('show');undo()}},'Undo'));t.classList.add('show');clearTimeout(toast.t);toast.t=setTimeout(()=>t.classList.remove('show'),5000)}
+// `choices` are extra buttons, offered before Undo. Keys 1 to 9 pick them while the toast is up.
+function toast(msg,undo,choices=[],ms=5000){const t=$('toast');const hide=()=>{t.classList.remove('show');toast.keys=null};
+  t.replaceChildren(h('span',{},msg),...choices.map(([label,fn],i)=>h('button',{class:'why',onclick(){hide();fn()}},h('kbd',{},String(i+1)),label)));
+  toast.keys=choices.length?choices.map(([,fn])=>()=>{hide();fn()}):null;
+  if(undo)t.append(h('button',{onclick(){hide();undo()}},'Undo'));t.classList.add('show');clearTimeout(toast.t);toast.t=setTimeout(hide,ms)}
 async function post(id,action){const r=await fetch('/api/feedback',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({job_id:id,action})});if(!r.ok)throw new Error('save failed')}
 async function postStage(id,stage){const r=await fetch('/api/stage',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({job_id:id,stage})});if(!r.ok)throw new Error('save failed')}
 async function setStage(j,stage){const before=j.stage||null;if(stage===before)return;
   try{await postStage(j.id,stage)}catch{toast('Could not save that. Is Scout still running?');return}
   await load({keepScroll:true});toast(`Marked as ${STAGE[stage||''].toLowerCase()}.`,async()=>{await postStage(j.id,before);await load({keepScroll:true})})}
+async function postReason(id,reason){const r=await fetch('/api/reason',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({job_id:id,reason})});if(!r.ok)throw new Error('save failed')}
+// Says what a reason did, from this job's own details, so a reason that changes nothing says so.
+function reasonEffect(j,reason){
+  if(reason==='location')return'Noted. Similar jobs move down only slightly.';
+  if(reason==='role')return'Jobs with titles like this moved down.';
+  if(reason==='stack')return j.missing_skills.length?`Jobs asking for ${j.missing_skills.join(', ')} moved down.`:'This posting asks for nothing outside your skills, so nothing moved.';
+  if(reason==='seniority'){const lv=LEVEL[j.level],yr=j.years_required;
+    if(lv==null&&!yr)return'This posting states no level or years, so nothing moved.';
+    return`Jobs ${[lv&&`at ${lv} level or above`,yr&&`asking for ${yr}+ years`].filter(Boolean).join(' or ')} moved down.`}
+  return'Reason cleared. Similar jobs move down.'}
+async function setReason(j,reason){const before=j.reason||null;
+  try{await postReason(j.id,reason)}catch{toast('Could not save that. Is Scout still running?');return}
+  await load({keepScroll:true});toast(reasonEffect(j,reason),async()=>{await postReason(j.id,before);await load({keepScroll:true})})}
 async function react(j,action){
   const before=j.state,next=before===action?null:action;
   const i=state.jobs.findIndex(x=>x.id===j.id);
   try{await post(j.id,next)}catch{toast('Could not save that. Is Scout still running?');return}
   if(next&&next!==(state.view==='new'?'like':state.view)&&state.selected===j.id){const after=state.jobs[i+1]||state.jobs[i-1];if(after)state.selected=after.id}
   await load({keepScroll:true});
-  const undo=async()=>{await post(j.id,before);if(before==='applied'&&j.stage)await postStage(j.id,j.stage);state.selected=j.id;await load({keepScroll:true})};
+  const undo=async()=>{await post(j.id,before);if(before==='applied'&&j.stage)await postStage(j.id,j.stage);if(before==='dislike'&&j.reason)await postReason(j.id,j.reason);state.selected=j.id;await load({keepScroll:true})};
   if(next==='like')toast('Liked. Similar jobs moved up.',undo);
-  else if(next==='dislike')toast('Hidden. Similar jobs moved down.',undo);
+  else if(next==='dislike')toast('Hidden. Why?',undo,Object.entries(REASON).map(([v,n])=>[n,()=>setReason(j,v)]),10000);
   else if(next==='applied')toast('Marked as applied.',undo);
   else toast(before==='like'?'Unliked. Ranking updated.':'Removed. Ranking updated.',undo);
 }
@@ -229,7 +251,9 @@ function renderDetail(){const j=current(),d=$('detail');if(!j){d.replaceChildren
         url&&h('a',{class:'btn primary',href:url,target:'_blank',rel:'noopener'},'Open posting',svg('out'))),
       j.state==='applied'&&h('div',{class:'stage'},h('span',{},`Applied ${ago(j.marked_at)}. Status:`),
         h('div',{class:'seg',role:'group','aria-label':'Application status'},Object.entries(STAGE).map(([v,n])=>h('button',{type:'button','aria-pressed':String((j.stage||'')===v),onclick(){setStage(j,v||null)}},n))),
-        j.stage&&j.stage_at&&h('span',{},`since ${ago(j.stage_at)}`))),
+        j.stage&&j.stage_at&&h('span',{},`since ${ago(j.stage_at)}`)),
+      j.state==='dislike'&&h('div',{class:'stage'},h('span',{},'Why not:'),
+        h('div',{class:'seg',role:'group','aria-label':'Why this job was not for you'},[['','No reason'],...Object.entries(REASON)].map(([v,n])=>h('button',{type:'button','aria-pressed':String((j.reason||'')===v),onclick(){if((j.reason||'')!==v)setReason(j,v||null)}},n))))),
     h('div',{class:'body'},notes,
       h('section',{},h('h3',{},'Why this score'),h('div',{class:'why'},
         h('div',{class:'big'},String(j.score),h('small',{},j.label),adj),
@@ -253,7 +277,7 @@ let t;$('q').addEventListener('input',()=>{clearTimeout(t);t=setTimeout(()=>{sta
 for(const id of['work','employment','posted','min','sort','unv'])$(id).addEventListener('change',()=>{state.selected=null;load()});
 $('reset').addEventListener('click',resetFilters);
 $('toggle').addEventListener('click',()=>{const open=$('filters').classList.toggle('open');$('toggle').setAttribute('aria-expanded',String(open))});
-addEventListener('keydown',e=>{if(/INPUT|SELECT/.test(e.target.tagName)||e.metaKey||e.ctrlKey||e.altKey)return;const j=current();if(e.key==='j')move(1);else if(e.key==='k')move(-1);else if(j&&e.key==='l')react(j,'like');else if(j&&e.key==='x')react(j,'dislike');else if(j&&e.key==='a')react(j,'applied');else if(j&&e.key==='o'){const u=safeUrl(j.url);if(u)window.open(u,'_blank','noopener')}});
+addEventListener('keydown',e=>{if(/INPUT|SELECT/.test(e.target.tagName)||e.metaKey||e.ctrlKey||e.altKey)return;const pick=toast.keys?.[Number(e.key)-1];if(pick){pick();return}const j=current();if(e.key==='j')move(1);else if(e.key==='k')move(-1);else if(j&&e.key==='l')react(j,'like');else if(j&&e.key==='x')react(j,'dislike');else if(j&&e.key==='a')react(j,'applied');else if(j&&e.key==='o'){const u=safeUrl(j.url);if(u)window.open(u,'_blank','noopener')}});
 load();
 </script>
 </body>

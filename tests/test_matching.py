@@ -120,3 +120,48 @@ def test_low_priority_titles_sink_even_when_embeddings_call_them_close():
     p = Profile({**PROFILE, "low_priority_title_terms": ["backend"]}, np.stack([v(1, 0, 0)]), v(1, 0, 0))
     front, back = score_jobs([job("Frontend Engineer"), job("Backend Engineer")], np.stack([v(1, 0, 0)] * 2), np.stack([v(1, 0, 0)] * 2), p)
     assert back["score"] < front["score"]
+
+
+def _points(jobs, titles, texts, disliked):
+    p = Profile(PROFILE, np.stack([v(1, 0, 0, 0)]), v(1, 0, 0, 0))
+    return [s["feedback_points"] for s in score_jobs(jobs, titles, texts, p, disliked=disliked)]
+
+
+def _pool(n=40, seed=3):
+    rng = np.random.default_rng(seed)
+    vecs = rng.normal(size=(n, 4)).astype(np.float32)
+    return vecs / np.linalg.norm(vecs, axis=1, keepdims=True)
+
+
+def test_a_location_reason_barely_moves_similar_jobs():
+    from scout.matching import Dislikes
+    vecs = _pool()
+    jobs = [job(company=str(i)) for i in range(len(vecs))]
+    general = _points(jobs, vecs, vecs, Dislikes(general=(vecs[:1], vecs[:1])))
+    location = _points(jobs, vecs, vecs, Dislikes(location=(vecs[:1], vecs[:1])))
+    assert general[0] == -12 and -3.5 < location[0] < 0
+
+
+def test_a_role_reason_follows_titles_not_descriptions():
+    from scout.matching import Dislikes
+    titles = np.stack([v(1, 0, 0, 0), v(0, 1, 0, 0)] + [v(0, 0, 1, 1)] * 10)
+    texts = np.stack([v(0, 0, 1, 0), v(0, 0, 1, 0)] + [v(0, 0, 0, 1)] * 10)  # The first two share a description.
+    jobs = [job(company=str(i)) for i in range(len(titles))]
+    pts = _points(jobs, titles, texts, Dislikes(role_titles=titles[:1]))
+    assert pts[0] < -10 and pts[1] > pts[0] + 5
+
+
+def test_a_stack_reason_sinks_jobs_asking_for_those_skills_but_never_yours():
+    from scout.matching import Dislikes
+    vecs = np.stack([v(1, 0, 0, 0)] * 4)
+    jobs = [job(skills=("angular",)), job(skills=("angular", "java")), job(skills=("react",)), job(skills=("vue",))]
+    pts = _points(jobs, vecs, vecs, Dislikes(stack=frozenset({"angular", "java", "react"})))
+    assert pts == [-6, -12, 0, 0]  # React is in the profile, so disliking a React posting for its stack can't sink React.
+
+
+def test_a_seniority_reason_sinks_that_level_and_above():
+    from scout.matching import Dislikes
+    vecs = np.stack([v(1, 0, 0, 0)] * 4)
+    jobs = [job("Senior Engineer"), job("Lead Engineer"), job("Engineer"), job("Engineer", description="5+ years of experience")]
+    pts = _points(jobs, vecs, vecs, Dislikes(level=3.0, years=5))
+    assert pts == [-8, -8, 0, -8]

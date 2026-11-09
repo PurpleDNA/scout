@@ -11,7 +11,7 @@ from pathlib import Path
 import numpy as np
 
 from .eligibility import classify
-from .matching import EMBED_DIM, embed, extract_industries, extract_skills
+from .matching import EMBED_DIM, Dislikes, embed, extract_industries, extract_skills, job_level, required_years
 from .sources import RawJob
 
 SCHEMA = """
@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
 ACTIVE_DAYS = 3      # A listing its source has stopped returning for this long has closed.
 MAX_AGE_DAYS = 60    # Older postings are hidden from review, even if still listed.
 STAGES = {"in_progress", "rejected", "hired"}  # Where an application went after "applied". None means no reply yet.
+REASONS = {"location", "role", "stack", "seniority"}  # Why a job was not for you. None means no reason given.
 TRACKED = ("like", "applied")  # Jobs you marked this way stay visible after the listing closes.
 
 
@@ -40,7 +41,7 @@ def connect(path: Path) -> sqlite3.Connection:
     if "employment" not in {r["name"] for r in db.execute("PRAGMA table_info(jobs)")}:
         db.execute("ALTER TABLE jobs ADD COLUMN employment TEXT DEFAULT ''")
     have = {r["name"] for r in db.execute("PRAGMA table_info(feedback)")}
-    for col in ("stage", "stage_at"):
+    for col in ("stage", "stage_at", "reason"):
         if col not in have:
             db.execute(f"ALTER TABLE feedback ADD COLUMN {col} TEXT")
     return db
@@ -161,15 +162,15 @@ def active_jobs(db: sqlite3.Connection) -> tuple[list[dict], np.ndarray, np.ndar
 
 
 def feedback_map(db: sqlite3.Connection) -> dict[str, sqlite3.Row]:
-    return {r["job_id"]: r for r in db.execute("SELECT job_id, action, at, stage, stage_at FROM feedback")}
+    return {r["job_id"]: r for r in db.execute("SELECT job_id, action, at, stage, stage_at, reason FROM feedback")}
 
 
 def set_feedback(db: sqlite3.Connection, job_id: str, action: str | None) -> None:
     if action is None:
         db.execute("DELETE FROM feedback WHERE job_id=?", (job_id,))
-    else:  # Switching to a different reaction starts over; repeating the same one keeps its date and stage.
+    else:  # Switching to a different reaction starts over; repeating the same one keeps its date, stage and reason.
         db.execute("""INSERT INTO feedback (job_id, action, at) VALUES (?,?,?)
-                      ON CONFLICT(job_id) DO UPDATE SET action=excluded.action, at=excluded.at, stage=NULL, stage_at=NULL
+                      ON CONFLICT(job_id) DO UPDATE SET action=excluded.action, at=excluded.at, stage=NULL, stage_at=NULL, reason=NULL
                       WHERE feedback.action != excluded.action""", (job_id, action, now_iso()))
     db.commit()
 
@@ -182,6 +183,33 @@ def set_stage(db: sqlite3.Connection, job_id: str, stage: str | None) -> bool:
                      (stage, None if stage is None else now_iso(), job_id))
     db.commit()
     return cur.rowcount == 1
+
+
+def set_reason(db: sqlite3.Connection, job_id: str, reason: str | None) -> bool:
+    """Say why a job was not for you, so the ranking can push on that signal instead of on everything similar."""
+    if reason is not None and reason not in REASONS:
+        raise ValueError(reason)
+    cur = db.execute("UPDATE feedback SET reason=? WHERE job_id=? AND action='dislike'", (reason, job_id))
+    db.commit()
+    return cur.rowcount == 1
+
+
+def dislikes(db: sqlite3.Connection) -> Dislikes:
+    rows = db.execute("""SELECT f.reason, j.title, j.description, j.skills, j.title_vec, j.text_vec FROM feedback f
+                         JOIN jobs j ON j.id=f.job_id WHERE f.action='dislike' AND j.text_vec IS NOT NULL""").fetchall()
+    def vecs(reason):
+        picked = [r for r in rows if r["reason"] == reason]
+        if not picked:
+            return None
+        as_matrix = lambda key: np.frombuffer(b"".join(r[key] for r in picked), dtype=np.float32).reshape(-1, EMBED_DIM)
+        return as_matrix("title_vec"), as_matrix("text_vec")
+    senior = [r for r in rows if r["reason"] == "seniority"]
+    levels = [lv for r in senior if (lv := job_level(r["title"])) is not None]
+    years = [y for r in senior if (y := required_years(r["description"] or "")) is not None]
+    roles = vecs("role")
+    return Dislikes(general=vecs(None), location=vecs("location"), role_titles=None if roles is None else roles[0],
+                    stack=frozenset(sk for r in rows if r["reason"] == "stack" for sk in json.loads(r["skills"] or "[]")),
+                    level=min(levels) if levels else None, years=min(years) if years else None)
 
 
 def feedback_vectors(db: sqlite3.Connection, action_set: tuple[str, ...]) -> tuple[np.ndarray, np.ndarray]:

@@ -68,6 +68,17 @@ def cmd_audit(args) -> int:
     return 0
 
 
+def cmd_misreads(_) -> int:
+    """Jobs you marked "Not open to me": places where the eligibility rules got it wrong."""
+    rows = store.connect(DB).execute("""SELECT j.title, j.company, j.location, j.scope, j.evidence, j.url FROM feedback f
+                                        JOIN jobs j ON j.id=f.job_id WHERE f.action='dislike' AND f.reason='location'
+                                        ORDER BY f.at DESC""").fetchall()
+    for r in rows:
+        print(f"{r['title'][:40]} @ {r['company'][:20]}  [{r['location'][:30]} -> {r['scope']}]\n  {r['evidence'][:140]}\n  {r['url']}")
+    print(f"{len(rows)} misread{'s' if len(rows) != 1 else ''}")
+    return 0
+
+
 def cmd_serve(args) -> int:
     from .ranker import Ranker
     from .server import serve
@@ -92,6 +103,7 @@ def main() -> None:
     s.add_argument("--scope", default="restricted")
     s.add_argument("-n", type=int, default=25)
     s.set_defaults(fn=cmd_audit)
+    sub.add_parser("misreads", help="jobs you marked as not open to you").set_defaults(fn=cmd_misreads)
     s = sub.add_parser("serve", help="run the web app")
     s.add_argument("--port", type=int, default=8787)
     s.set_defaults(fn=cmd_serve)

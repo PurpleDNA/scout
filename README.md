@@ -63,7 +63,7 @@ ranker.py       Filter, apply feedback, diversify →  recommendations
 | Lagos, in any setup | Lagos |
 | "Remote, Nigeria" | Lagos, because the employer is hiring where you live |
 
-**Score:** title 32%, background 23%, skills 25%, seniority 10%, industry 5%, freshness 5%. Roles in an unrelated profession are damped. "Like", "Applied" and "Not for me" move similar jobs by up to 12 points compared with the rest of the pool, immediately, and clicking again undoes it. Further jobs from one company and medium- or low-confidence jobs sink in the list, without changing their displayed score.
+**Score:** title 32%, background 23%, skills 25%, seniority 10%, industry 5%, freshness 5%. Roles in an unrelated profession are damped. "Like", "Applied" and "Not for me" move similar jobs by up to 12 points compared with the rest of the pool, immediately, and clicking again undoes it. After "Not for me", Scout asks why, and the answer decides what moves: *Not open to me* only nudges similar jobs slightly, *Wrong role* sinks similar titles, *Wrong stack* sinks jobs asking for that posting's skills outside your profile, and *Too senior* sinks that level and above. Without an answer, everything similar sinks. `uv run scout misreads` lists the jobs you marked as not open to you, which is where the eligibility rules need fixing. Further jobs from one company and medium- or low-confidence jobs sink in the list, without changing their displayed score.
 
 ## What was learned from Jobright
 

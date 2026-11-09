@@ -51,6 +51,9 @@ _YEARS = re.compile(r"\b(\d{1,2})\s*\+?\s*(?:-\s*\d{1,2}\s*)?(?:years?|yrs?)\b(?
 WEIGHTS = {"role": 0.32, "profile": 0.23, "skills": 0.25, "seniority": 0.10, "industry": 0.05, "freshness": 0.05}
 FEEDBACK_MAX_POINTS = 12.0
 FEEDBACK_MIN_POINTS = -3.0  # What being unlike a reaction costs: a nudge, not a punishment.
+LOCATION_DISLIKE_WEIGHT = 0.25  # "Not open to me" says the eligibility was misread, not that the job was wrong for you.
+STACK_POINTS = 6.0  # Per unwanted skill a job asks for, up to two.
+SENIORITY_POINTS = 8.0
 OFF_DIRECTION_FACTOR = 0.65  # Title score multiplier for roles you listed as low priority.
 SECONDARY_TITLE_DISCOUNT = 0.18  # On the 0-1 similarity scale. Must exceed the top of the role scale's headroom (1 - 0.88), or exact secondary matches still max out.
 EMBED_MODEL = "BAAI/bge-small-en-v1.5"
@@ -89,6 +92,20 @@ def job_level(title: str) -> float | None:
 def required_years(text: str) -> int | None:
     found = [int(n) for n in _YEARS.findall(text) if int(n) <= 20]
     return max(found) if found else None
+
+
+Vecs = tuple[np.ndarray, np.ndarray]  # Title vectors, text vectors.
+
+
+@dataclass
+class Dislikes:
+    """The jobs you passed on, sorted by the reason you gave. Each reason pushes on a different signal."""
+    general: Vecs | None = None  # No reason given: everything similar sinks.
+    location: Vecs | None = None  # Similar jobs sink only a little.
+    role_titles: np.ndarray | None = None  # Jobs with similar titles sink.
+    stack: frozenset[str] = frozenset()  # Jobs asking for these sink, apart from skills in your profile.
+    level: float | None = None  # Jobs at this level or above sink.
+    years: int | None = None  # Jobs asking for this many years or more sink.
 
 
 @dataclass
@@ -144,7 +161,7 @@ def label(score: float) -> str:
     return "Strong match" if score >= 75 else "Good match" if score >= 60 else "Fair match" if score >= 45 else "Weak match"
 
 
-def _affinity(titles: np.ndarray, texts: np.ndarray, reacted: tuple[np.ndarray, np.ndarray] | None) -> np.ndarray:
+def _affinity(titles: np.ndarray, texts: np.ndarray, reacted: Vecs | None, title_weight: float = 0.5) -> np.ndarray:
     """Points for closeness to the jobs you reacted to, relative to the whole pool.
 
     Averages the nearest few reactions so varied tastes don't blur together. Measuring against the pool's top
@@ -152,14 +169,14 @@ def _affinity(titles: np.ndarray, texts: np.ndarray, reacted: tuple[np.ndarray, 
     """
     if reacted is None or not len(reacted[1]):
         return np.zeros(len(titles))
-    sims = 0.5 * (titles @ reacted[0].T) + 0.5 * (texts @ reacted[1].T)
+    sims = title_weight * (titles @ reacted[0].T) + (1 - title_weight) * (texts @ reacted[1].T)
     k = min(3, sims.shape[1])
     near = np.sort(sims, axis=1)[:, -k:].mean(axis=1)
     return np.clip((near - np.percentile(near, 90)) * 60, FEEDBACK_MIN_POINTS, FEEDBACK_MAX_POINTS)
 
 
 def score_jobs(jobs: list[dict], title_vecs: np.ndarray, text_vecs: np.ndarray, profile: Profile,
-               liked: tuple[np.ndarray, np.ndarray] | None = None, disliked: tuple[np.ndarray, np.ndarray] | None = None) -> list[dict]:
+               liked: Vecs | None = None, disliked: Vecs | Dislikes | None = None) -> list[dict]:
     """Return one breakdown per job, in input order. Each job needs title, description, skills, industries, posted_at."""
     if not jobs:
         return []
@@ -171,13 +188,24 @@ def score_jobs(jobs: list[dict], title_vecs: np.ndarray, text_vecs: np.ndarray, 
     have, my_industries = set(profile.data["skills"]), set(profile.data["industries"])
     core = set(profile.data.get("core_skills", []))
 
-    feedback = _affinity(title_vecs, text_vecs, liked) - _affinity(title_vecs, text_vecs, disliked)
+    d = disliked if isinstance(disliked, Dislikes) else Dislikes(general=disliked)
+    roles = None if d.role_titles is None else (d.role_titles, d.role_titles)
+    push = (_affinity(title_vecs, text_vecs, d.general) + LOCATION_DISLIKE_WEIGHT * _affinity(title_vecs, text_vecs, d.location)
+            + _affinity(title_vecs, text_vecs, roles, title_weight=1.0))
+    unwanted = d.stack - have
+    like = _affinity(title_vecs, text_vecs, liked)
+
     off_direction = [t.lower() for t in profile.data.get("low_priority_title_terms", [])]
 
     out = []
     for i, job in enumerate(jobs):
         wanted = set(job["skills"])
         sen, years = seniority_fit(job["title"], job["description"], profile.data)
+        level = job_level(job["title"])
+        too_senior = ((d.level is not None and level is not None and level >= d.level)
+                      or (d.years is not None and years is not None and years >= d.years))
+        against = push[i] + STACK_POINTS * min(len(wanted & unwanted), 2) + SENIORITY_POINTS * too_senior
+        points = float(like[i] - np.clip(against, FEEDBACK_MIN_POINTS, FEEDBACK_MAX_POINTS))
         title_fit = float(role[i])
         if any(term in job["title"].lower() for term in off_direction):
             title_fit *= OFF_DIRECTION_FACTOR
@@ -189,12 +217,12 @@ def score_jobs(jobs: list[dict], title_vecs: np.ndarray, text_vecs: np.ndarray, 
         # A different profession can't score well on the strength of soft signals alone.
         if parts["role"] < 0.25:
             total *= 0.6 + 1.6 * parts["role"]
-        total = float(total + feedback[i])
+        total = float(total + points)
         shown = float(np.clip(total, 0, 99))
         out.append({
             # Ranking uses the uncapped value: at the 99 cap, a Like would otherwise have no effect on order.
             "score": round(shown), "rank_value": total, "label": label(shown), "parts": {k: round(v, 2) for k, v in parts.items()},
-            "feedback_points": round(float(feedback[i]), 1), "matched_skills": sorted(wanted & have),
+            "feedback_points": round(points, 1), "level": level, "matched_skills": sorted(wanted & have),
             "missing_skills": sorted(wanted - have), "matched_industries": sorted(my_industries & set(job["industries"])),
             "years_required": years,
         })
