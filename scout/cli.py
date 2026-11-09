@@ -28,8 +28,13 @@ def cmd_ingest(args) -> int:
             error = e
             failed.append(name)
         store.save(db, jobs)
+        if not error and jobs:  # An empty answer is more likely a block or an outage than every listing closing at once.
+            store.mark_fetched(db, name, store.now_iso())
         note = f"  PARTIAL/FAILED: {error!r}"[:140] if error else ""
         print(f"{name:16}{len(jobs):6} jobs  {time.time() - started:5.1f}s{note}", flush=True)
+    if not args.only:  # A source taken out of SOURCES never fetches again, so its listings start closing from today.
+        for gone in set(store.source_clocks(db)) - set(SOURCES):
+            store.mark_fetched(db, gone, store.now_iso())
     print("classifying and embedding...", flush=True)
     print(store.reprocess(db))
     return 1 if failed else 0

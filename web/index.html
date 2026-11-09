@@ -165,11 +165,14 @@ function renderSegs(){
   $('lanes').replaceChildren(...[['','All',total],['global_remote','Global remote',state.counts.global_remote||0],['lagos','Lagos',state.counts.lagos||0]].map(([v,n,c])=>h('button',{'aria-pressed':String(state.lane===v),onclick(){state.lane=v;state.selected=null;load()}},n,h('b',{},String(c)))));
   $('views').replaceChildren(...[['new','To review',null],['like','Liked',state.reactions.like],['applied','Applied',state.reactions.applied],['dislike','Not for me',state.reactions.dislike]].map(([v,n,c])=>h('button',{'aria-pressed':String(state.view===v),onclick(){state.view=v;state.selected=null;load()}},n,c?h('b',{},String(c)):null)));
 }
+// Whether the listing is still up. Shown only in your own lists.
+function trackChips(j){if(state.view!=='applied'&&state.view!=='like')return null;const out=[];
+  if(j.closed)out.push(h('span',{class:'chip miss'},'Listing closed'));else if(j.stale)out.push(h('span',{class:'chip miss'},'Over 60 days old'));return out}
 function row(j){return h('li',{class:'row'+(j.id===state.selected?' on':''),'data-id':j.id},
   h('button',{class:'pick',onclick(){select(j.id,true)},'aria-current':String(j.id===state.selected)},
     h('div',{class:'score '+tone(j),title:j.label},String(j.score)),
     h('div',{},h('h2',{},j.title),h('div',{class:'sub'},[j.company,ago(j.posted_at)].filter(Boolean).join(', ')),
-      h('div',{class:'chips'},whereChip(j),TYPE[j.employment]&&h('span',{class:'chip'},TYPE[j.employment]),j.salary&&h('span',{class:'chip'},j.salary)))),
+      h('div',{class:'chips'},trackChips(j),whereChip(j),TYPE[j.employment]&&h('span',{class:'chip'},TYPE[j.employment]),j.salary&&h('span',{class:'chip'},j.salary)))),
   h('div',{class:'quick'},
     h('button',{class:'icon like','aria-pressed':String(j.state==='like'),'aria-label':(j.state==='like'?'Unlike ':'Like ')+j.title,title:j.state==='like'?'Unlike':'Like',onclick(){react(j,'like')}},svg(j.state==='like'?'upFill':'up')),
     h('button',{class:'icon','aria-label':'Not for me: '+j.title,title:'Not for me',onclick(){react(j,'dislike')}},svg(j.state==='dislike'?'downFill':'down'))))}
@@ -198,7 +201,9 @@ async function share(j,url){
   try{await navigator.clipboard.writeText(url);toast('Link copied.')}catch{toast(`Copy this link: ${url}`)}
 }
 function renderDetail(){const j=current(),d=$('detail');if(!j){d.replaceChildren();document.body.classList.remove('reading');return}const url=safeUrl(j.url);
-  const notes=[h('div',{class:'note'+(j.confidence==='high'?'':' warn')},svg(j.confidence==='high'?'ok':'warn'),h('div',{},h('strong',{},j.confidence==='high'?'Open to you. ':j.confidence==='medium'?'Probably open to you. ':'Check this first. '),j.evidence))];
+  const notes=[];
+  if(j.closed||j.stale)notes.push(h('div',{class:'note warn'},svg('warn'),h('div',{},h('strong',{},j.closed?'Listing closed. ':'Over 60 days old. '),j.closed?'Its board has stopped listing it. It stays here because you marked it.':'It may have been filled. It stays here because you marked it.')));
+  notes.push(h('div',{class:'note'+(j.confidence==='high'?'':' warn')},svg(j.confidence==='high'?'ok':'warn'),h('div',{},h('strong',{},j.confidence==='high'?'Open to you. ':j.confidence==='medium'?'Probably open to you. ':'Check this first. '),j.evidence)));
   if(j.flags.includes('us_hours'))notes.push(h('div',{class:'note warn'},svg('warn'),h('div',{},h('strong',{},'US hours. '),'The posting mentions US time zones, which may mean evening work from Lagos.')));
   if(j.years_required&&j.years_required>3)notes.push(h('div',{class:'note warn'},svg('warn'),h('div',{},h('strong',{},'Experience. '),`Asks for ${j.years_required}+ years.`)));
   const adj=j.feedback_points?h('span',{class:'adj'},`${j.feedback_points>0?'+':''}${Math.round(j.feedback_points)} from your feedback`):null;

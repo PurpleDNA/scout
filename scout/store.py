@@ -26,8 +26,9 @@ CREATE INDEX IF NOT EXISTS jobs_lane ON jobs(lane);
 CREATE TABLE IF NOT EXISTS feedback (job_id TEXT PRIMARY KEY, action TEXT NOT NULL, at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
 """
-ACTIVE_DAYS = 3      # A listing missing from feeds for this long has closed.
-MAX_AGE_DAYS = 60    # Older postings are hidden, even if still listed.
+ACTIVE_DAYS = 3      # A listing its source has stopped returning for this long has closed.
+MAX_AGE_DAYS = 60    # Older postings are hidden from review, even if still listed.
+TRACKED = ("like", "applied")  # Jobs you marked this way stay visible after the listing closes.
 
 
 def connect(path: Path) -> sqlite3.Connection:
@@ -71,6 +72,19 @@ def save(db: sqlite3.Connection, jobs: list[RawJob]) -> None:
     db.commit()
 
 
+def mark_fetched(db: sqlite3.Connection, source: str, at: str) -> None:
+    """Record a complete, successful fetch. Closing listings is measured against this, never against today."""
+    db.execute("INSERT OR REPLACE INTO meta VALUES (?, ?)", (f"fetched:{source}", at))
+    db.commit()
+
+
+def source_clocks(db: sqlite3.Connection) -> dict[str, str]:
+    """Each source's last successful fetch. Before one was recorded, the last time it returned anything stands in."""
+    clocks = {r["source"]: r["seen"] for r in db.execute("SELECT source, MAX(last_seen) seen FROM jobs GROUP BY source")}
+    clocks.update({r["key"].split(":", 1)[1]: r["value"] for r in db.execute("SELECT key, value FROM meta WHERE key LIKE 'fetched:%'")})
+    return clocks
+
+
 def reprocess(db: sqlite3.Connection, batch: int = 128) -> dict:
     """Classify every job and embed the eligible ones. Safe to rerun after changing the classifier."""
     rows = db.execute("SELECT id, title, location, workplace, restrictions, timezones, remote_board, description, tags, embedded_hash FROM jobs").fetchall()
@@ -103,38 +117,46 @@ def reprocess(db: sqlite3.Connection, batch: int = 128) -> dict:
 
 
 def active_jobs(db: sqlite3.Connection) -> tuple[list[dict], np.ndarray, np.ndarray]:
-    """Eligible, live jobs, one row per posting, plus their title and text vectors."""
-    now = datetime.now(timezone.utc)
-    seen_after = (now - timedelta(days=ACTIVE_DAYS)).isoformat()
-    posted_after = (now - timedelta(days=MAX_AGE_DAYS)).isoformat()
-    rows = db.execute("""SELECT * FROM jobs WHERE lane != 'rejected' AND title_vec IS NOT NULL AND last_seen >= ?
-                         AND (posted_at IS NULL OR posted_at >= ?)""", (seen_after, posted_after)).fetchall()
-    # The same role on several boards: keep the most trustworthy eligibility, then the direct company posting.
+    """Eligible jobs, one row per posting, plus their title and text vectors.
+
+    Open listings, plus closed or old ones you liked or applied to, so your history stays. Each job says which it is:
+    `closed` when its source has fetched successfully for ACTIVE_DAYS without it, `stale` when posted over MAX_AGE_DAYS ago.
+    Skipping ingest, or a source failing, never closes anything.
+    """
+    clocks = {s: datetime.fromisoformat(t) for s, t in source_clocks(db).items()}
+    posted_after = (datetime.now(timezone.utc) - timedelta(days=MAX_AGE_DAYS)).isoformat()
+    tracked = {r["job_id"] for r in db.execute(f"SELECT job_id FROM feedback WHERE action IN ({','.join('?' * len(TRACKED))})", TRACKED)}
+    rows = db.execute("SELECT * FROM jobs WHERE lane != 'rejected' AND title_vec IS NOT NULL").fetchall()
+    # The same role on several boards: keep the one you marked, then an open one, then the most trustworthy
+    # eligibility, then the direct company posting.
     rank = {"high": 0, "medium": 1, "low": 2}
-    best: dict[str, sqlite3.Row] = {}
+    best: dict[str, tuple] = {}
     for r in rows:
+        closed = datetime.fromisoformat(r["last_seen"]) < clocks[r["source"]] - timedelta(days=ACTIVE_DAYS)
+        stale = r["posted_at"] is not None and r["posted_at"] < posted_after
+        if (closed or stale) and r["id"] not in tracked:
+            continue
         key = dedupe_key(r["title"], r["company"])
-        cur = best.get(key)
-        order = (rank[r["confidence"]], r["source"] not in ("greenhouse", "lever", "ashby"))
-        if cur is None or order < (rank[cur["confidence"]], cur["source"] not in ("greenhouse", "lever", "ashby")):
-            best[key] = r
-    keep = list(best.values())
+        order = (r["id"] not in tracked, closed, rank[r["confidence"]], r["source"] not in ("greenhouse", "lever", "ashby"))
+        if key not in best or order < best[key][0]:
+            best[key] = (order, r, closed, stale)
+    keep = [(r, closed, stale) for _, r, closed, stale in best.values()]
     jobs = []
-    for r in keep:
+    for r, closed, stale in keep:
         d = {k: r[k] for k in r.keys() if k not in ("title_vec", "text_vec", "restrictions", "timezones")}
         for k in ("tags", "skills", "industries", "flags"):
             d[k] = json.loads(d[k] or "[]")
-        jobs.append(d)
+        jobs.append({**d, "closed": closed, "stale": stale})
     empty = np.zeros((0, EMBED_DIM), dtype=np.float32)
     if not keep:
         return jobs, empty, empty
-    titles = np.frombuffer(b"".join(r["title_vec"] for r in keep), dtype=np.float32).reshape(-1, EMBED_DIM)
-    texts = np.frombuffer(b"".join(r["text_vec"] for r in keep), dtype=np.float32).reshape(-1, EMBED_DIM)
+    titles = np.frombuffer(b"".join(r["title_vec"] for r, _, _ in keep), dtype=np.float32).reshape(-1, EMBED_DIM)
+    texts = np.frombuffer(b"".join(r["text_vec"] for r, _, _ in keep), dtype=np.float32).reshape(-1, EMBED_DIM)
     return jobs, titles, texts
 
 
-def feedback_map(db: sqlite3.Connection) -> dict[str, str]:
-    return {r["job_id"]: r["action"] for r in db.execute("SELECT job_id, action FROM feedback")}
+def feedback_map(db: sqlite3.Connection) -> dict[str, sqlite3.Row]:
+    return {r["job_id"]: r for r in db.execute("SELECT job_id, action, at FROM feedback")}
 
 
 def set_feedback(db: sqlite3.Connection, job_id: str, action: str | None) -> None:

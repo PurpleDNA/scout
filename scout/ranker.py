@@ -55,17 +55,21 @@ class Ranker:
         excluded = {c.lower() for c in self.profile.data.get("exclude_companies", [])}
         terms = query.lower().split()
         cutoff = (datetime.now(timezone.utc) - timedelta(days=posted_within)).isoformat() if posted_within else None
-        states = list(fb.values())
+        states = [f["action"] for f in fb.values()]
+        tracking = status in store.TRACKED  # Your own history: show every job you marked, closed or not.
         results, counts = [], {"global_remote": 0, "lagos": 0}
         for job, s in zip(self.jobs, scores):
-            state = fb.get(job["id"])
-            if job["company"].lower() in excluded:
+            mark = fb.get(job["id"])
+            state = mark["action"] if mark else None
+            if not tracking and (job["closed"] or job["stale"]):
+                continue
+            if job["company"].lower() in excluded and not tracking:
                 continue
             if status == "new" and state in ("dislike", "applied"):
                 continue
             if status in ("like", "applied", "dislike") and state != status:
                 continue
-            if verified_only and job["confidence"] == "low":
+            if verified_only and job["confidence"] == "low" and not tracking:
                 continue
             if s["score"] < min_score or (work_model and job["work_model"] != work_model):
                 continue
@@ -80,7 +84,7 @@ class Ranker:
             counts[job["lane"]] += 1
             if lane and job["lane"] != lane:
                 continue
-            results.append({**job, **s, "state": state})
+            results.append({**job, **s, "state": state, "marked_at": mark["at"] if mark else None})
         results = sorted(results, key=lambda r: r["posted_at"] or "", reverse=True) if sort == "newest" else diversify(results)
         return {"total": len(results), "counts": counts, "jobs": results[:limit], "last_ingest": self._loaded_at,
                 "reactions": {a: states.count(a) for a in ("like", "applied", "dislike")}}

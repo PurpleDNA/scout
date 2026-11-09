@@ -89,3 +89,67 @@ def test_date_employment_and_newest_filters(tmp_path, monkeypatch):
     assert sorted(titles(posted_within=30)) == ["Developer", "Engineer"]  # The undated job can't pass a date filter.
     assert titles(employment="contract") == ["Developer"]
     assert titles(sort="newest")[:2] == ["Engineer", "Developer"]
+
+
+def _age(db, job_id, days):
+    """Pretend this job was last returned by its source `days` ago."""
+    from datetime import datetime, timedelta, timezone
+    db.execute("UPDATE jobs SET last_seen=? WHERE id=?", ((datetime.now(timezone.utc) - timedelta(days=days)).isoformat(), job_id))
+    db.commit()
+
+
+def test_skipping_ingest_closes_nothing(tmp_path, monkeypatch):
+    db, p = setup(tmp_path, monkeypatch, [job(1, "Engineer", location="Lagos"), job(2, "Developer", location="Lagos")])
+    store.reprocess(db)
+    _age(db, "t:1", 10)
+    _age(db, "t:2", 10)  # Nobody ran ingest for 10 days: the source's clock is 10 days old too.
+    assert Ranker(db, p).recommend()["total"] == 2
+
+
+def test_a_listing_missing_from_successful_fetches_closes(tmp_path, monkeypatch):
+    db, p = setup(tmp_path, monkeypatch, [job(1, "Engineer", location="Lagos"), job(2, "Developer", location="Lagos")])
+    store.reprocess(db)
+    _age(db, "t:2", 4)
+    store.mark_fetched(db, "t", store.now_iso())
+    assert [j["title"] for j in Ranker(db, p).recommend()["jobs"]] == ["Engineer"]
+
+
+def test_a_failed_fetch_closes_nothing(tmp_path, monkeypatch):
+    db, p = setup(tmp_path, monkeypatch, [job(1, "Engineer", location="Lagos"), job(2, "Developer", location="Lagos")])
+    store.reprocess(db)
+    from datetime import datetime, timedelta, timezone
+    store.mark_fetched(db, "t", (datetime.now(timezone.utc) - timedelta(days=9)).isoformat())  # Last success, 9 days ago.
+    _age(db, "t:1", 8)
+    _age(db, "t:2", 8)
+    assert Ranker(db, p).recommend()["total"] == 2
+
+
+def test_marked_jobs_survive_closing(tmp_path, monkeypatch):
+    db, p = setup(tmp_path, monkeypatch, [job(1, "Engineer", location="Lagos"), job(2, "Developer", location="Lagos"),
+                                          job(3, "React Engineer", location="Lagos")])
+    store.reprocess(db)
+    store.set_feedback(db, "t:1", "applied")
+    store.set_feedback(db, "t:2", "like")
+    for i in (1, 2, 3):
+        _age(db, f"t:{i}", 5)
+    store.mark_fetched(db, "t", store.now_iso())
+    r = Ranker(db, p)
+    assert r.recommend()["total"] == 0
+    applied = r.recommend(status="applied")["jobs"]
+    assert [(j["title"], j["closed"]) for j in applied] == [("Engineer", True)]
+    assert [j["title"] for j in r.recommend(status="like")["jobs"]] == ["Developer"]
+
+
+def test_a_marked_duplicate_wins_over_an_open_one(tmp_path, monkeypatch):
+    db, p = setup(tmp_path, monkeypatch, [job(1, "React Engineer", location="Lagos", company="A"),
+                                          job(2, "React Engineer", location="Lagos", company="A")])
+    store.reprocess(db)
+    shown = Ranker(db, p).recommend()["jobs"][0]["id"]
+    other = "t:2" if shown == "t:1" else "t:1"
+    store.set_feedback(db, other, "applied")
+    _age(db, other, 5)
+    store.mark_fetched(db, "t", store.now_iso())
+    r = Ranker(db, p)
+    assert [j["id"] for j in r.recommend(status="applied")["jobs"]] == [other]
+    assert r.recommend()["total"] == 0  # The role you applied to doesn't come back as new through its twin.
+

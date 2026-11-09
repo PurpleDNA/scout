@@ -14,7 +14,7 @@ uv run scout ingest     # fetch, classify, embed. First run is slow; later runs 
 uv run scout serve      # http://127.0.0.1:8787
 ```
 
-Run `ingest` about once a day. Postings missing from the feeds for 3 days disappear.
+Run `ingest` about once a day. Skipping days is fine: a posting only closes once its board has fetched successfully for 3 days without it, so a missed run or a failing board never empties the list. Postings over 60 days old drop out too. Jobs you liked or applied to stay in those tabs, marked as closed.
 
 Other commands:
 
