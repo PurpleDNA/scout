@@ -124,7 +124,7 @@ def test_a_failed_fetch_closes_nothing(tmp_path, monkeypatch):
     assert Ranker(db, p).recommend()["total"] == 2
 
 
-def test_marked_jobs_survive_closing(tmp_path, monkeypatch):
+def test_marked_jobs_survive_closing_and_carry_a_stage(tmp_path, monkeypatch):
     db, p = setup(tmp_path, monkeypatch, [job(1, "Engineer", location="Lagos"), job(2, "Developer", location="Lagos"),
                                           job(3, "React Engineer", location="Lagos")])
     store.reprocess(db)
@@ -136,8 +136,19 @@ def test_marked_jobs_survive_closing(tmp_path, monkeypatch):
     r = Ranker(db, p)
     assert r.recommend()["total"] == 0
     applied = r.recommend(status="applied")["jobs"]
-    assert [(j["title"], j["closed"]) for j in applied] == [("Engineer", True)]
+    assert [(j["title"], j["closed"], j["stage"]) for j in applied] == [("Engineer", True, None)]
     assert [j["title"] for j in r.recommend(status="like")["jobs"]] == ["Developer"]
+
+    score = applied[0]["score"]
+    assert store.set_stage(db, "t:1", "rejected")
+    after = r.recommend(status="applied")
+    assert after["jobs"][0]["stage"] == "rejected" and after["stages"]["rejected"] == 1
+    assert after["jobs"][0]["score"] == score  # The stage is for your records; ranking ignores it.
+    store.set_feedback(db, "t:1", "applied")
+    assert r.recommend(status="applied")["jobs"][0]["stage"] == "rejected"  # Repeating the reaction keeps the stage.
+    assert not store.set_stage(db, "t:2", "hired")  # Only applications have a stage.
+    store.set_feedback(db, "t:1", "like")  # Switching reaction starts over.
+    assert db.execute("SELECT stage FROM feedback WHERE job_id='t:1'").fetchone()["stage"] is None
 
 
 def test_a_marked_duplicate_wins_over_an_open_one(tmp_path, monkeypatch):

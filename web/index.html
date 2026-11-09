@@ -50,6 +50,8 @@ main{flex:1;display:grid;grid-template-columns:minmax(360px,460px) 1fr;min-heigh
 .chip{font-size:12px;padding:0 7px;border-radius:5px;background:var(--panel-2);line-height:20px;white-space:nowrap}
 .chip.good{background:var(--accent-soft);color:var(--accent)}.row.on .chip.good{background:var(--panel)}
 .chip.warn{background:var(--warn-soft);color:var(--warn)}
+.chip.bad{background:none;box-shadow:inset 0 0 0 1px var(--bad);color:var(--bad)}
+.stage{display:flex;align-items:center;gap:10px;margin-top:12px;flex-wrap:wrap;font-size:13px;color:var(--muted)}
 .chip.miss{background:none;box-shadow:inset 0 0 0 1px var(--line);color:var(--muted)}
 .quick{display:flex;flex-direction:column;gap:4px;padding:10px 10px 10px 6px}
 .icon{width:34px;height:34px;display:grid;place-items:center;background:none;border:1px solid var(--line);border-radius:8px;color:var(--muted);transition:transform .1s}
@@ -141,9 +143,11 @@ const ICON={"share": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 25
 const SOURCE={himalayas:'Himalayas',remotive:'Remotive',remoteok:'Remote OK',jobicy:'Jobicy',weworkremotely:'We Work Remotely',greenhouse:'Greenhouse',lever:'Lever',ashby:'Ashby',bamboohr:'BambooHR',teamtailor:'Teamtailor',jobberman:'Jobberman',myjobmag:'MyJobMag',hotnigerianjobs:'HotNigerianJobs'};
 const SCOPE={worldwide:'Worldwide',nigeria:'Nigeria',africa:'Africa',emea:'EMEA',lagos:'Lagos',unknown:'Unverified'};
 const TYPE={full_time:'Full-time',part_time:'Part-time',contract:'Contract',internship:'Internship or trainee'};
+const STAGE={'':'No reply yet',in_progress:'In progress',rejected:'Rejected',hired:'Hired'};
+const STAGE_CHIP={'':'',in_progress:'warn',rejected:'bad',hired:'good'};
 const PARTS={role:'Title',profile:'Background',skills:'Skills',seniority:'Seniority',industry:'Industry',freshness:'Freshness'};
 const FILTER_DEFAULTS={work:'',employment:'',posted:'',min:'60',sort:'best'};
-const state={lane:'',view:'new',jobs:[],selected:null,counts:{},reactions:{}};
+const state={lane:'',view:'new',jobs:[],selected:null,counts:{},reactions:{},stages:{}};
 const $=id=>document.getElementById(id);
 function h(tag,attrs={},...kids){const e=document.createElement(tag);for(const[k,v]of Object.entries(attrs)){if(k==='class')e.className=v;else if(k.startsWith('on'))e.addEventListener(k.slice(2),v);else if(v!==false&&v!=null)e.setAttribute(k,v)}for(const c of kids.flat())if(c!=null&&c!==false)e.append(c);return e}
 // Trusted markup only: these strings come from the bundled icon set, never from job data.
@@ -165,8 +169,9 @@ function renderSegs(){
   $('lanes').replaceChildren(...[['','All',total],['global_remote','Global remote',state.counts.global_remote||0],['lagos','Lagos',state.counts.lagos||0]].map(([v,n,c])=>h('button',{'aria-pressed':String(state.lane===v),onclick(){state.lane=v;state.selected=null;load()}},n,h('b',{},String(c)))));
   $('views').replaceChildren(...[['new','To review',null],['like','Liked',state.reactions.like],['applied','Applied',state.reactions.applied],['dislike','Not for me',state.reactions.dislike]].map(([v,n,c])=>h('button',{'aria-pressed':String(state.view===v),onclick(){state.view=v;state.selected=null;load()}},n,c?h('b',{},String(c)):null)));
 }
-// Whether the listing is still up. Shown only in your own lists.
+// Where an application stands, and whether the listing is still up. Shown only in your own lists.
 function trackChips(j){if(state.view!=='applied'&&state.view!=='like')return null;const out=[];
+  if(j.state==='applied'){const g=j.stage||'';out.push(h('span',{class:'chip '+STAGE_CHIP[g]},g?STAGE[g]:'Applied '+ago(j.marked_at)))}
   if(j.closed)out.push(h('span',{class:'chip miss'},'Listing closed'));else if(j.stale)out.push(h('span',{class:'chip miss'},'Over 60 days old'));return out}
 function row(j){return h('li',{class:'row'+(j.id===state.selected?' on':''),'data-id':j.id},
   h('button',{class:'pick',onclick(){select(j.id,true)},'aria-current':String(j.id===state.selected)},
@@ -183,13 +188,17 @@ function select(id,open){state.selected=id;document.querySelectorAll('.row').for
 function move(step){const i=state.jobs.findIndex(j=>j.id===state.selected);const n=state.jobs[Math.max(0,Math.min(i+step,state.jobs.length-1))];if(n)select(n.id)}
 function toast(msg,undo){const t=$('toast');t.replaceChildren(h('span',{},msg));if(undo)t.append(h('button',{onclick(){t.classList.remove('show');undo()}},'Undo'));t.classList.add('show');clearTimeout(toast.t);toast.t=setTimeout(()=>t.classList.remove('show'),5000)}
 async function post(id,action){const r=await fetch('/api/feedback',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({job_id:id,action})});if(!r.ok)throw new Error('save failed')}
+async function postStage(id,stage){const r=await fetch('/api/stage',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({job_id:id,stage})});if(!r.ok)throw new Error('save failed')}
+async function setStage(j,stage){const before=j.stage||null;if(stage===before)return;
+  try{await postStage(j.id,stage)}catch{toast('Could not save that. Is Scout still running?');return}
+  await load({keepScroll:true});toast(`Marked as ${STAGE[stage||''].toLowerCase()}.`,async()=>{await postStage(j.id,before);await load({keepScroll:true})})}
 async function react(j,action){
   const before=j.state,next=before===action?null:action;
   const i=state.jobs.findIndex(x=>x.id===j.id);
   try{await post(j.id,next)}catch{toast('Could not save that. Is Scout still running?');return}
   if(next&&next!==(state.view==='new'?'like':state.view)&&state.selected===j.id){const after=state.jobs[i+1]||state.jobs[i-1];if(after)state.selected=after.id}
   await load({keepScroll:true});
-  const undo=async()=>{await post(j.id,before);state.selected=j.id;await load({keepScroll:true})};
+  const undo=async()=>{await post(j.id,before);if(before==='applied'&&j.stage)await postStage(j.id,j.stage);state.selected=j.id;await load({keepScroll:true})};
   if(next==='like')toast('Liked. Similar jobs moved up.',undo);
   else if(next==='dislike')toast('Hidden. Similar jobs moved down.',undo);
   else if(next==='applied')toast('Marked as applied.',undo);
@@ -217,7 +226,10 @@ function renderDetail(){const j=current(),d=$('detail');if(!j){d.replaceChildren
         h('button',{class:'btn','aria-pressed':String(j.state==='dislike'),onclick(){react(j,'dislike')}},svg(j.state==='dislike'?'downFill':'down'),'Not for me'),
         h('button',{class:'btn','aria-pressed':String(j.state==='applied'),onclick(){react(j,'applied')}},svg(j.state==='applied'?'sentFill':'sent'),'Applied'),
         url&&h('button',{class:'btn',type:'button',onclick(){share(j,url)}},svg('share'),'Share'),
-        url&&h('a',{class:'btn primary',href:url,target:'_blank',rel:'noopener'},'Open posting',svg('out')))),
+        url&&h('a',{class:'btn primary',href:url,target:'_blank',rel:'noopener'},'Open posting',svg('out'))),
+      j.state==='applied'&&h('div',{class:'stage'},h('span',{},`Applied ${ago(j.marked_at)}. Status:`),
+        h('div',{class:'seg',role:'group','aria-label':'Application status'},Object.entries(STAGE).map(([v,n])=>h('button',{type:'button','aria-pressed':String((j.stage||'')===v),onclick(){setStage(j,v||null)}},n))),
+        j.stage&&j.stage_at&&h('span',{},`since ${ago(j.stage_at)}`))),
     h('div',{class:'body'},notes,
       h('section',{},h('h3',{},'Why this score'),h('div',{class:'why'},
         h('div',{class:'big'},String(j.score),h('small',{},j.label),adj),
@@ -232,8 +244,9 @@ async function load(opt={}){const my=++seq;const scroll=$('list').scrollTop;
   if(!opt.keepScroll&&!state.jobs.length)$('list').replaceChildren(...Array.from({length:7},()=>h('li',{class:'skel'},h('i'),h('i'))));
   const p=new URLSearchParams({lane:state.lane,q:$('q').value,work_model:$('work').value,employment:$('employment').value,posted_within:$('posted').value,min_score:state.view==='new'?$('min').value:'0',sort:$('sort').value,status:state.view,limit:'200'});if($('unv').checked)p.set('unverified','1');
   try{const r=await fetch('/api/jobs?'+p);if(!r.ok)throw new Error(r.status);const data=await r.json();if(my!==seq)return;
-    state.jobs=data.jobs;state.counts=data.counts;state.reactions=data.reactions;renderSegs();renderList();if(opt.keepScroll)$('list').scrollTop=scroll;
-    $('line').textContent=`${data.total} ${data.total===1?'job':'jobs'}${data.total>data.jobs.length?`, showing the first ${data.jobs.length}`:''}. Updated ${ago(data.last_ingest)||'never'}.`;
+    state.jobs=data.jobs;state.counts=data.counts;state.reactions=data.reactions;state.stages=data.stages||{};renderSegs();renderList();if(opt.keepScroll)$('list').scrollTop=scroll;
+    const st=state.stages,tally=state.view==='applied'?` ${st.in_progress||0} in progress, ${st.rejected||0} rejected, ${st.hired||0} hired.`:'';
+    $('line').textContent=`${data.total} ${data.total===1?'job':'jobs'}${data.total>data.jobs.length?`, showing the first ${data.jobs.length}`:''}.${tally} Updated ${ago(data.last_ingest)||'never'}.`;
   }catch{if(my!==seq)return;$('list').replaceChildren(h('li',{class:'empty'},h('strong',{},'Could not load jobs'),'Scout may have stopped. Run: uv run scout serve',h('div',{},h('button',{class:'btn',onclick(){load()}},'Try again'))));$('detail').replaceChildren()}}
 $('searchIcon').append(svg('search'));
 let t;$('q').addEventListener('input',()=>{clearTimeout(t);t=setTimeout(()=>{state.selected=null;load()},220)});

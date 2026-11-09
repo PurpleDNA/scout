@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
 """
 ACTIVE_DAYS = 3      # A listing its source has stopped returning for this long has closed.
 MAX_AGE_DAYS = 60    # Older postings are hidden from review, even if still listed.
+STAGES = {"in_progress", "rejected", "hired"}  # Where an application went after "applied". None means no reply yet.
 TRACKED = ("like", "applied")  # Jobs you marked this way stay visible after the listing closes.
 
 
@@ -38,6 +39,10 @@ def connect(path: Path) -> sqlite3.Connection:
     db.executescript(SCHEMA)
     if "employment" not in {r["name"] for r in db.execute("PRAGMA table_info(jobs)")}:
         db.execute("ALTER TABLE jobs ADD COLUMN employment TEXT DEFAULT ''")
+    have = {r["name"] for r in db.execute("PRAGMA table_info(feedback)")}
+    for col in ("stage", "stage_at"):
+        if col not in have:
+            db.execute(f"ALTER TABLE feedback ADD COLUMN {col} TEXT")
     return db
 
 
@@ -156,15 +161,27 @@ def active_jobs(db: sqlite3.Connection) -> tuple[list[dict], np.ndarray, np.ndar
 
 
 def feedback_map(db: sqlite3.Connection) -> dict[str, sqlite3.Row]:
-    return {r["job_id"]: r for r in db.execute("SELECT job_id, action, at FROM feedback")}
+    return {r["job_id"]: r for r in db.execute("SELECT job_id, action, at, stage, stage_at FROM feedback")}
 
 
 def set_feedback(db: sqlite3.Connection, job_id: str, action: str | None) -> None:
     if action is None:
         db.execute("DELETE FROM feedback WHERE job_id=?", (job_id,))
-    else:
-        db.execute("INSERT OR REPLACE INTO feedback VALUES (?,?,?)", (job_id, action, now_iso()))
+    else:  # Switching to a different reaction starts over; repeating the same one keeps its date and stage.
+        db.execute("""INSERT INTO feedback (job_id, action, at) VALUES (?,?,?)
+                      ON CONFLICT(job_id) DO UPDATE SET action=excluded.action, at=excluded.at, stage=NULL, stage_at=NULL
+                      WHERE feedback.action != excluded.action""", (job_id, action, now_iso()))
     db.commit()
+
+
+def set_stage(db: sqlite3.Connection, job_id: str, stage: str | None) -> bool:
+    """Track an application after applying. For your records only: ranking reads the action, never the stage."""
+    if stage is not None and stage not in STAGES:
+        raise ValueError(stage)
+    cur = db.execute("UPDATE feedback SET stage=?, stage_at=? WHERE job_id=? AND action='applied'",
+                     (stage, None if stage is None else now_iso(), job_id))
+    db.commit()
+    return cur.rowcount == 1
 
 
 def feedback_vectors(db: sqlite3.Connection, action_set: tuple[str, ...]) -> tuple[np.ndarray, np.ndarray]:

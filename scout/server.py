@@ -48,14 +48,25 @@ def serve(ranker: Ranker, port: int) -> None:
 
         def do_POST(self):
             # Requiring JSON stops other websites posting here from your browser with a plain form.
-            if self.path != "/api/feedback" or self.headers.get("Content-Type") != "application/json":
+            if self.path not in ("/api/feedback", "/api/stage") or self.headers.get("Content-Type") != "application/json":
                 return self._send(404, b'{"error":"not found"}')
             try:
                 body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)))
-                job_id, action = body["job_id"], body.get("action")
+                job_id = body["job_id"]
             except (ValueError, KeyError, TypeError):
                 return self._send(400, b'{"error":"bad request"}')
-            if action not in ACTIONS or not isinstance(job_id, str):
+            if not isinstance(job_id, str):
+                return self._send(400, b'{"error":"bad job"}')
+            if self.path == "/api/stage":
+                stage = body.get("stage")
+                if stage is not None and stage not in store.STAGES:
+                    return self._send(400, b'{"error":"bad stage"}')
+                with lock:
+                    if not store.set_stage(ranker.db, job_id, stage):
+                        return self._send(409, b'{"error":"mark it as applied first"}')
+                return self._send(200, b'{"ok":true}')
+            action = body.get("action")
+            if action not in ACTIONS:
                 return self._send(400, b'{"error":"bad action"}')
             with lock:
                 store.set_feedback(ranker.db, job_id, action)

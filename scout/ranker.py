@@ -84,7 +84,9 @@ class Ranker:
             counts[job["lane"]] += 1
             if lane and job["lane"] != lane:
                 continue
-            results.append({**job, **s, "state": state, "marked_at": mark["at"] if mark else None})
+            results.append({**job, **s, "state": state, "marked_at": mark["at"] if mark else None,
+                            "stage": mark["stage"] if mark else None, "stage_at": mark["stage_at"] if mark else None})
         results = sorted(results, key=lambda r: r["posted_at"] or "", reverse=True) if sort == "newest" else diversify(results)
         return {"total": len(results), "counts": counts, "jobs": results[:limit], "last_ingest": self._loaded_at,
-                "reactions": {a: states.count(a) for a in ("like", "applied", "dislike")}}
+                "reactions": {a: states.count(a) for a in ("like", "applied", "dislike")},
+                "stages": {g: sum(1 for f in fb.values() if f["action"] == "applied" and f["stage"] == g) for g in store.STAGES}}

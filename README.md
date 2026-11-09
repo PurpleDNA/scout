@@ -16,6 +16,8 @@ uv run scout serve      # http://127.0.0.1:8787
 
 Run `ingest` about once a day. Skipping days is fine: a posting only closes once its board has fetched successfully for 3 days without it, so a missed run or a failing board never empties the list. Postings over 60 days old drop out too. Jobs you liked or applied to stay in those tabs, marked as closed.
 
+In the Applied tab, give each application a status: no reply yet, in progress, rejected or hired. It's only for your own tracking and doesn't change the ranking.
+
 Other commands:
 
 ```bash
