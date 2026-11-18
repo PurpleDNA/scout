@@ -147,7 +147,10 @@ def test_marked_jobs_survive_closing_and_carry_a_stage(tmp_path, monkeypatch):
     store.set_feedback(db, "t:1", "applied")
     assert r.recommend(status="applied")["jobs"][0]["stage"] == "rejected"  # Repeating the reaction keeps the stage.
     assert not store.set_stage(db, "t:2", "hired")  # Only applications have a stage.
-    store.set_feedback(db, "t:1", "like")  # Switching reaction starts over.
+    store.set_feedback(db, "t:1", "like")  # Applying already counts as liking, so a like keeps the application.
+    assert [j["stage"] for j in r.recommend(status="applied")["jobs"]] == ["rejected"]
+    assert r.recommend()["total"] == 0  # And it stays out of To review.
+    store.set_feedback(db, "t:1", "dislike")  # Switching to another reaction starts over.
     assert db.execute("SELECT stage FROM feedback WHERE job_id='t:1'").fetchone()["stage"] is None
 
 

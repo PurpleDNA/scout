@@ -172,9 +172,11 @@ def set_feedback(db: sqlite3.Connection, job_id: str, action: str | None) -> Non
     if action is None:
         db.execute("DELETE FROM feedback WHERE job_id=?", (job_id,))
     else:  # Switching to a different reaction starts over; repeating the same one keeps its date, stage and reason.
+        # Applying already counts as liking, so a like on an application leaves it applied rather than losing it.
         db.execute("""INSERT INTO feedback (job_id, action, at) VALUES (?,?,?)
                       ON CONFLICT(job_id) DO UPDATE SET action=excluded.action, at=excluded.at, stage=NULL, stage_at=NULL, reason=NULL
-                      WHERE feedback.action != excluded.action""", (job_id, action, now_iso()))
+                      WHERE feedback.action != excluded.action
+                        AND NOT (feedback.action = 'applied' AND excluded.action = 'like')""", (job_id, action, now_iso()))
     db.commit()
 
 
