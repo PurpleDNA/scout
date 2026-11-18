@@ -57,7 +57,7 @@ class Ranker:
         cutoff = (datetime.now(timezone.utc) - timedelta(days=posted_within)).isoformat() if posted_within else None
         states = [f["action"] for f in fb.values()]
         tracking = status in store.TRACKED  # Your own history: show every job you marked, closed or not.
-        results, counts = [], {"global_remote": 0, "lagos": 0}
+        results, counts = [], {"global_remote": 0, "nigeria": 0}
         for job, s in zip(self.jobs, scores):
             mark = fb.get(job["id"])
             state = mark["action"] if mark else None

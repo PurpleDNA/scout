@@ -169,8 +169,8 @@ const tone=j=>j.label.split(' ')[0].toLowerCase();
 const current=()=>state.jobs.find(j=>j.id===state.selected);
 function whereChip(j){const place=SCOPE[j.scope]||j.scope;const cls=j.confidence==='high'?'good':'warn';const text=j.work_model==='remote'?'Remote, '+place:j.work_model==='hybrid'?'Hybrid, Lagos':'Lagos';return h('span',{class:'chip '+cls},text)}
 function renderSegs(){
-  const total=(state.counts.global_remote||0)+(state.counts.lagos||0);
-  $('lanes').replaceChildren(...[['','All',total],['global_remote','Global remote',state.counts.global_remote||0],['lagos','Lagos',state.counts.lagos||0]].map(([v,n,c])=>h('button',{'aria-pressed':String(state.lane===v),onclick(){state.lane=v;state.selected=null;load()}},n,h('b',{},String(c)))));
+  const total=(state.counts.global_remote||0)+(state.counts.nigeria||0);
+  $('lanes').replaceChildren(...[['','All',total],['global_remote','Global remote',state.counts.global_remote||0],['nigeria','Nigeria',state.counts.nigeria||0]].map(([v,n,c])=>h('button',{'aria-pressed':String(state.lane===v),onclick(){state.lane=v;state.selected=null;load()}},n,h('b',{},String(c)))));
   $('views').replaceChildren(...[['new','To review',null],['like','Liked',state.reactions.like],['applied','Applied',state.reactions.applied],['dislike','Not for me',state.reactions.dislike]].map(([v,n,c])=>h('button',{'aria-pressed':String(state.view===v),onclick(){state.view=v;state.selected=null;load()}},n,c?h('b',{},String(c)):null)));
 }
 // Where an application stands, and whether the listing is still up. Shown only in your own lists.

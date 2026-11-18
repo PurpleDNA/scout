@@ -44,6 +44,8 @@ def connect(path: Path) -> sqlite3.Connection:
     for col in ("stage", "stage_at", "reason"):
         if col not in have:
             db.execute(f"ALTER TABLE feedback ADD COLUMN {col} TEXT")
+    db.execute("UPDATE jobs SET lane='nigeria' WHERE lane='lagos'")  # The Lagos lane became the Nigeria lane.
+    db.commit()
     return db
 
 
@@ -109,7 +111,7 @@ def reprocess(db: sqlite3.Connection, batch: int = 128) -> dict:
         if e.lane != "rejected" and r["embedded_hash"] != digest:
             to_embed.append((r["id"], r["title"], body[:1500], digest, e.lane))
     db.commit()
-    to_embed.sort(key=lambda c: c[4] != "lagos")  # The small lane first, so a long first run is useful sooner.
+    to_embed.sort(key=lambda c: c[4] != "nigeria")  # The small lane first, so a long first run is useful sooner.
     for i in range(0, len(to_embed), batch):
         chunk = to_embed[i:i + batch]
         titles, texts = embed([c[1] for c in chunk]), embed([c[2] for c in chunk])

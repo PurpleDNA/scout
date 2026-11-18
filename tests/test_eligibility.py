@@ -22,16 +22,17 @@ def test_named_elsewhere_is_rejected(loc):
     assert c(loc, remote_board=True).lane == "rejected"
 
 
-def test_remote_tied_to_nigeria_lands_in_the_lagos_lane():
-    assert (c("Remote, Nigeria").lane, c("Remote, Nigeria").scope) == ("lagos", "nigeria")
-    assert (c("Remote, Lagos, Nigeria").lane, c("Remote, Lagos, Nigeria").scope) == ("lagos", "lagos")
+def test_remote_tied_to_nigeria_lands_in_the_nigeria_lane():
+    assert (c("Remote, Nigeria").lane, c("Remote, Nigeria").scope) == ("nigeria", "nigeria")
+    assert (c("Remote, Lagos, Nigeria").lane, c("Remote, Lagos, Nigeria").scope) == ("nigeria", "lagos")
+    assert (c("Remote - Abuja").lane, c("Remote - Abuja").scope) == ("nigeria", "nigeria")
     assert c("Remote, Nigeria").work_model == "remote"
 
 
 def test_every_lagos_setup_is_kept():
     assert {c("Lagos").work_model, c("Lagos", workplace="hybrid").work_model, c("Lagos", workplace="remote").work_model} == {"onsite", "hybrid", "remote"}
     for r in (c("Lagos"), c("Lagos", workplace="hybrid"), c("Lagos", workplace="remote")):
-        assert r.lane == "lagos"
+        assert r.lane == "nigeria"
 
 
 def test_emea_counts_but_is_medium_confidence():
@@ -102,27 +103,55 @@ def test_timezone_must_cover_utc_plus_one():
 @pytest.mark.parametrize("loc", ["Lagos, Nigeria", "Lagos", "Ikeja, Lagos", "Victoria Island, Lagos"])
 def test_lagos_defaults_onsite(loc):
     r = c(loc)
-    assert (r.lane, r.work_model, r.scope) == ("lagos", "onsite", "lagos")
+    assert (r.lane, r.work_model, r.scope) == ("nigeria", "onsite", "lagos")
 
 
 def test_lagos_hybrid_detected():
     assert c("Lagos, Nigeria", workplace="hybrid").work_model == "hybrid"
     assert c("Lagos", description="This is a hybrid role, three days in office.").work_model == "hybrid"
     assert c("Hybrid - Lagos").work_model == "hybrid"
-    assert c("Lagos, Nigeria", workplace="hybrid").lane == "lagos"
+    assert c("Lagos, Nigeria", workplace="hybrid").lane == "nigeria"
 
 
 def test_lagos_listing_mentioning_remote_area_stays_onsite():
     assert c("Lagos", description="You will visit remote areas to service customers.").work_model == "onsite"
 
 
-def test_lagos_listing_truly_remote_goes_to_global_lane():
+def test_lagos_listing_truly_remote_stays_in_the_nigeria_lane():
     r = c("Lagos", description="This is a fully remote role.")
-    assert (r.work_model, r.lane) == ("remote", "lagos")
+    assert (r.work_model, r.lane) == ("remote", "nigeria")
 
 
-@pytest.mark.parametrize("loc", ["Edo, Nigeria", "Abuja", "London, United Kingdom", "Nairobi, Kenya", "Bangalore, India"])
-def test_onsite_elsewhere_is_rejected(loc):
+@pytest.mark.parametrize("loc", ["Gbagada", "Ikorodu, Lagos State", "Festac Town", "Amuwo-Odofin", "Ebute Metta", "Eko Atlantic"])
+def test_lagos_areas_named_alone(loc):
+    assert (c(loc).lane, c(loc).scope) == ("nigeria", "lagos")
+
+
+@pytest.mark.parametrize("loc", ["Abuja", "Edo, Nigeria", "Port Harcourt", "Ibadan, Oyo State", "Kano", "Nigeria", "Benin City",
+                                 "Rivers State", "FCT", "South West Region, Nigeria", "Warri, Delta State"])
+def test_onsite_elsewhere_in_nigeria_is_rejected(loc):
+    r = c(loc)
+    assert (r.lane, r.work_model, r.scope) == ("rejected", "onsite", "nigeria")
+    assert "outside Lagos" in r.evidence
+    assert c(loc, workplace="hybrid").lane == "rejected"
+
+
+@pytest.mark.parametrize("loc", ["Abuja", "Port Harcourt", "Kano, Nigeria", "Benin City", "Rivers State", "Warri, Delta State"])
+def test_remote_anywhere_in_nigeria_is_kept(loc):
+    r = c(loc, workplace="remote")
+    assert (r.lane, r.scope) == ("nigeria", "nigeria")
+
+
+def test_nigerian_listing_saying_remote_in_its_text_is_remote():
+    for loc in ("Nigeria", "Abuja", "Port Harcourt, Rivers State"):
+        r = c(loc, description="This is a fully remote role.")
+        assert (r.work_model, r.lane) == ("remote", "nigeria"), loc
+    assert c("Abuja", description="This is a hybrid role, three days in office.").work_model == "hybrid"
+
+
+@pytest.mark.parametrize("loc", ["London, United Kingdom", "Nairobi, Kenya", "Bangalore, India", "Benin", "Baltimore, Maryland",
+                                 "Niamey, Niger", "Epe, Netherlands", "San Jose, CA", "Saudi Arabia", "Minnesota"])
+def test_onsite_outside_nigeria_is_rejected(loc):
     assert c(loc).lane == "rejected"
 
 

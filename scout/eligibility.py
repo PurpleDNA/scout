@@ -14,9 +14,9 @@ HOME_UTC_OFFSET = 1  # Lagos
 
 @dataclass(frozen=True)
 class Eligibility:
-    lane: str  # global_remote | lagos (any setup, plus remote roles tied to Nigeria) | rejected
+    lane: str  # global_remote | nigeria (Lagos in any setup, plus remote roles anywhere in Nigeria) | rejected
     work_model: str  # remote | hybrid | onsite
-    scope: str  # worldwide | nigeria | africa | emea | lagos | restricted | elsewhere | unknown
+    scope: str  # worldwide | nigeria | africa | emea | lagos | restricted | elsewhere | unknown. Lagos jobs are scope lagos.
     confidence: str  # high | medium | low
     evidence: str
     flags: tuple[str, ...] = field(default_factory=tuple)
@@ -26,8 +26,23 @@ def _rx(pattern: str) -> re.Pattern:
     return re.compile(pattern, re.I)
 
 
-LAGOS = _rx(r"\b(lagos|ikeja|ikoyi|lekki|victoria island|yaba|surulere|apapa|ajah|oshodi)\b")
+# Lagos and the areas listings name on their own. Names shared with places abroad (Maryland, Marina) are left out:
+# they only count alongside “Lagos”, which already matches. So is Epe, a Dutch town too.
+LAGOS = _rx(
+    r"\b(lagos|ikeja|ikoyi|lekki|victoria island|yaba|surulere|apapa|ajah|oshodi|gbagada|ikorodu|festac|agege|ojota|"
+    r"ilupeju|isolo|oregun|magodo|ogba|ojodu|ketu|mushin|ebute[- ]metta|obalende|oniru|sangotedo|badagry|alimosho|"
+    r"egbeda|iyana[- ]ipaja|opebi|alausa|amuwo[- ]odofin|ajao estate|osapa|ilasan|ikota|eko atlantic|"
+    r"satellite town|ojo|ipaja|ogudu|anthony village|palmgrove|idimu|ikotun|igando|abule[- ]egba|ijora|idumota)\b")
 NIGERIA = _rx(r"\bnigeria\b")
+# Other cities and states. Ambiguous names need their qualifier: “Benin City”, “Rivers State”, “Delta State”,
+# “Niger State” and “Plateau State” (Benin, Niger and a plain “Delta” are elsewhere too).
+NIGERIAN_PLACE = _rx(
+    r"\b(nigeria|abuja|fct|federal capital territory|port[- ]harcourt|ibadan|kano|kaduna|enugu|benin city|warri|owerri|"
+    r"abeokuta|ilorin|jos|uyo|calabar|onitsha|asaba|akure|osogbo|oshogbo|ogbomoso|ogbomosho|sokoto|maiduguri|yola|bauchi|"
+    r"minna|lokoja|makurdi|umuahia|awka|abakaliki|yenagoa|ado[- ]ekiti|gombe|jalingo|katsina|lafia|dutse|damaturu|"
+    r"birnin[- ]kebbi|gusau|sapele|sagamu|shagamu|ota|ijebu[- ]ode|nnewi|eket|bonny|onne|ikot ekpene|zaria|suleja|"
+    r"oyo|ogun|osun|ondo|ekiti|kwara|kogi|benue|edo|imo|abia|anambra|ebonyi|bayelsa|akwa ibom|cross river|nasarawa|"
+    r"taraba|adamawa|borno|yobe|jigawa|kebbi|zamfara|rivers state|delta state|niger state|plateau state)\b")
 WORLDWIDE = _rx(r"\b(world\s?wide|anywhere|global(ly)?|international)\b")
 AFRICA = _rx(r"(?<!south )(?<!north )(?<!east )(?<!west )\bafrica\b|\bsub-saharan\b")
 EMEA = _rx(r"\bemea\b")
@@ -111,7 +126,7 @@ def _names_a_place(label: str) -> bool:
     return bool(re.search(r"[a-z]{2}", _NOT_A_PLACE.sub(" ", label), re.I))
 
 
-def _work_model(location: str, workplace: str | None, description: str, remote_board: bool, lagos: bool) -> str:
+def _work_model(location: str, workplace: str | None, description: str, remote_board: bool, local: bool) -> str:
     if workplace:
         w = workplace.lower().replace("-", "").replace(" ", "")
         if w in ("remote", "hybrid", "onsite"):
@@ -122,7 +137,7 @@ def _work_model(location: str, workplace: str | None, description: str, remote_b
         return "remote"
     if remote_board:
         return "remote"
-    if lagos:
+    if local:
         # Boards rarely label this, so read the posting, but only trust phrasing about the job itself.
         if REMOTE_TEXT.search(description):
             return "remote"
@@ -140,21 +155,24 @@ def classify(*, location: str = "", workplace: str | None = None, restrictions: 
              remote_board: bool = False) -> Eligibility:
     location = location or ""
     in_lagos = bool(LAGOS.search(location))
-    model = _work_model(location, workplace, description, remote_board, in_lagos)
+    in_nigeria = in_lagos or bool(NIGERIAN_PLACE.search(location))
+    model = _work_model(location, workplace, description, remote_board, in_nigeria)
     flags = ("us_hours",) if US_HOURS.search(description) else ()
 
-    # Local remote: an employer naming Lagos or Nigeria is hiring where you live, so it belongs in the Lagos lane.
-    if model == "remote" and restrictions is None and (in_lagos or NIGERIA.search(location)):
+    # Local remote: an employer naming a Nigerian place is hiring where you live, so it belongs in the Nigeria lane.
+    if model == "remote" and restrictions is None and in_nigeria:
         if _covers_home_tz(timezones):
-            return Eligibility("lagos", model, "lagos" if in_lagos else "nigeria", "high", f"Location: “{location}”", flags)
+            return Eligibility("nigeria", model, "lagos" if in_lagos else "nigeria", "high", f"Location: “{location}”", flags)
 
+    # Going into an office means living near it, so on-site and hybrid work only counts in Lagos.
     if model != "remote":
         if in_lagos:
             evidence = f"Location: “{location}”"
             if model == "onsite" and not workplace:
                 evidence += ". The listing doesn't mention remote or hybrid, so check the posting."
-            return Eligibility("lagos", model, "lagos", "high", evidence, flags)
-        return Eligibility("rejected", model, "elsewhere", "high", f"{model.capitalize()} outside Lagos: “{location or 'no location given'}”", flags)
+            return Eligibility("nigeria", model, "lagos", "high", evidence, flags)
+        return Eligibility("rejected", model, "nigeria" if in_nigeria else "elsewhere", "high",
+                           f"{model.capitalize()} outside Lagos: “{location or 'no location given'}”", flags)
 
     def rejected(scope: str, why: str) -> Eligibility:
         return Eligibility("rejected", model, scope, "high", why, flags)

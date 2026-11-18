@@ -45,17 +45,17 @@ def test_lanes_rejections_duplicates_and_feedback(tmp_path, monkeypatch):
     r = Ranker(db, p)
 
     data = r.recommend()
-    assert data["counts"] == {"global_remote": 1, "lagos": 1}  # 1 and 2 merged; 4 and 6 rejected; 5 unverified
+    assert data["counts"] == {"global_remote": 1, "nigeria": 1}  # 1 and 2 merged; 4 and 6 rejected; 5 unverified
     assert r.recommend(verified_only=False)["counts"]["global_remote"] == 2
-    assert [j["work_model"] for j in r.recommend(lane="lagos")["jobs"]] == ["onsite"]
+    assert [j["work_model"] for j in r.recommend(lane="nigeria")["jobs"]] == ["onsite"]
     assert r.recommend()["reactions"] == {"like": 0, "applied": 0, "dislike": 0}
 
-    target = r.recommend(lane="lagos")["jobs"][0]["id"]
+    target = r.recommend(lane="nigeria")["jobs"][0]["id"]
     store.set_feedback(db, target, "dislike")
-    assert r.recommend(lane="lagos")["total"] == 0
-    assert r.recommend(lane="lagos", status="dislike")["total"] == 1
+    assert r.recommend(lane="nigeria")["total"] == 0
+    assert r.recommend(lane="nigeria", status="dislike")["total"] == 1
     store.set_feedback(db, target, None)
-    assert r.recommend(lane="lagos")["total"] == 1
+    assert r.recommend(lane="nigeria")["total"] == 1
 
 
 def test_diversify_stops_one_company_flooding_but_keeps_true_scores():

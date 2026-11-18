@@ -94,7 +94,7 @@ def main() -> None:
     s.set_defaults(fn=cmd_ingest)
     sub.add_parser("reprocess", help="reclassify stored jobs").set_defaults(fn=cmd_reprocess)
     s = sub.add_parser("top", help="print the best matches")
-    s.add_argument("--lane", choices=["global_remote", "lagos"])
+    s.add_argument("--lane", choices=["global_remote", "nigeria"])
     s.add_argument("-n", type=int, default=20)
     s.add_argument("--unverified", action="store_true")
     s.set_defaults(fn=cmd_top)
