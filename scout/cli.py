@@ -6,7 +6,7 @@ import sys
 import time
 from pathlib import Path
 
-from . import store
+from . import programmes, store
 from .sources import SOURCES
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -16,7 +16,7 @@ PROFILE = ROOT / "profile.json"
 
 def cmd_ingest(args) -> int:
     db = store.connect(DB)
-    names = args.only or list(SOURCES)
+    names = [n for n in args.only if n in SOURCES] if args.only else list(SOURCES)
     failed = []
     for name in names:
         started = time.time()
@@ -35,6 +35,15 @@ def cmd_ingest(args) -> int:
     if not args.only:  # A source taken out of SOURCES never fetches again, so its listings start closing from today.
         for gone in set(store.source_clocks(db)) - set(SOURCES):
             store.mark_fetched(db, gone, store.now_iso())
+    if not args.only or "programmes" in args.only:
+        started = time.time()
+        try:
+            fetched, new = programmes.refresh(db)
+            print(f"{'programmes':16}{fetched:6} found {new:4} new  {time.time() - started:5.1f}s", flush=True)
+        except Exception as e:
+            failed.append("programmes")
+            print(f"{'programmes':16}  FAILED: {e!r}"[:140], flush=True)
+    print(f"cleanup: {store.purge_old(db)} jobs and {programmes.cleanup(db)} programmes held over {store.MAX_AGE_DAYS} days removed", flush=True)
     print("classifying and embedding...", flush=True)
     print(store.reprocess(db))
     return 1 if failed else 0
@@ -90,7 +99,7 @@ def main() -> None:
     p = argparse.ArgumentParser(prog="scout")
     sub = p.add_subparsers(dest="cmd", required=True)
     s = sub.add_parser("ingest", help="fetch all sources, classify, embed")
-    s.add_argument("--only", nargs="*", choices=list(SOURCES))
+    s.add_argument("--only", nargs="*", choices=[*SOURCES, "programmes"])
     s.set_defaults(fn=cmd_ingest)
     sub.add_parser("reprocess", help="reclassify stored jobs").set_defaults(fn=cmd_reprocess)
     s = sub.add_parser("top", help="print the best matches")

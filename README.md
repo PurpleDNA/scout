@@ -16,6 +16,10 @@ uv run scout serve      # http://127.0.0.1:8787
 
 Run `ingest` about once a day. Skipping days is fine: a posting only closes once its board has fetched successfully for 3 days without it, so a missed run or a failing board never empties the list. Postings over 60 days old drop out too. Jobs you liked or applied to stay in those tabs, marked as closed.
 
+Each ingest also deletes jobs Scout has held for 60 days once they have closed or gone stale. Jobs you reacted to are kept: applied ones for your records, liked and "not for me" ones because the ranking learns from them. A job its board still lists with no posting date is kept as well, since deleting it would bring it straight back as new.
+
+**Trainee and internship programmes** have their own page at http://127.0.0.1:8787/programmes (the "Programmes" button). They come from jobs.revicemycv.com, whose strength is Nigerian graduate trainee schemes, and are not ranked, scored or used as feedback. Round-up posts ("multiple positions") are dropped unless they name a tech role. Programmes are sorted by deadline, read from the description, and drop off once it passes; undated ones follow, newest first. Mark them applied or hide them. They are deleted 60 days after Scout first saw them, unless you applied. `scout ingest --only programmes` refreshes just these.
+
 In the Applied tab, give each application a status: no reply yet, in progress, rejected or hired. It's only for your own tracking and doesn't change the ranking.
 
 Other commands:
@@ -97,5 +101,6 @@ From the public site and its public JavaScript bundle, without calling its priva
 - Identifies itself honestly and fetches slowly. Nigerian boards use listing pages that robots.txt permits, and only excerpts are kept.
 - Remote OK's API terms require naming and linking back to it: each job's page does this. Don't remove that if you publish this.
 - **HotNigerianJobs** comes in through its public RSS feed only, keeping titles, links and the feed's excerpts. Its robots.txt allows search use (`search=yes`) and forbids AI training (`ai-train=no`), and blocks named AI crawlers such as ClaudeBot. Scout is your own program, runs under its own name and trains nothing. Its terms prohibit reproducing its content, so don't publish what Scout stores from it. To turn it off, remove it from `SOURCES` in `scout/sources.py`.
+- **jobs.revicemycv.com** comes in through the JSON API its own site uses, which robots.txt allows. Scout reads newest first, 50 per page with 3 seconds between pages, and stops at the first page it already has, so a daily run is usually one request. Its robots.txt asks for 128 seconds between requests; Scout doesn't wait that long.
 - **Indeed is not included.** It answers 403 to an honest client, and Scout doesn't disguise itself to get past that.
 - This is built for personal use. Check each source's terms before making it a public product.

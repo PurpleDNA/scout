@@ -164,6 +164,25 @@ def active_jobs(db: sqlite3.Connection) -> tuple[list[dict], np.ndarray, np.ndar
     return jobs, titles, texts
 
 
+def purge_old(db: sqlite3.Connection, today: datetime | None = None) -> int:
+    """Delete jobs held for MAX_AGE_DAYS that have closed or gone stale.
+
+    Anything you reacted to stays: applied for your records, liked and not-for-me because the ranking learns from them.
+    A job still listed and undated stays too, or the next ingest would bring it straight back as new.
+    """
+    now = today or datetime.now(timezone.utc)
+    held = (now - timedelta(days=MAX_AGE_DAYS)).isoformat()
+    clocks = {s: datetime.fromisoformat(t) for s, t in source_clocks(db).items()}
+    rows = db.execute("""SELECT id, source, posted_at, last_seen FROM jobs
+                         WHERE first_seen < ? AND id NOT IN (SELECT job_id FROM feedback)""", (held,)).fetchall()
+    gone = [r["id"] for r in rows
+            if datetime.fromisoformat(r["last_seen"]) < clocks[r["source"]] - timedelta(days=ACTIVE_DAYS)
+            or (r["posted_at"] is not None and r["posted_at"] < held)]
+    db.executemany("DELETE FROM jobs WHERE id=?", [(i,) for i in gone])
+    db.commit()
+    return len(gone)
+
+
 def feedback_map(db: sqlite3.Connection) -> dict[str, sqlite3.Row]:
     return {r["job_id"]: r for r in db.execute("SELECT job_id, action, at, stage, stage_at, reason FROM feedback")}
 

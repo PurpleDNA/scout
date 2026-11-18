@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scout · Trainee, internship &amp; scholarship programmes</title>
+<script>
+(()=>{let saved=null;try{saved=localStorage.getItem('scout-theme')}catch{}
+document.documentElement.dataset.theme=saved==='dark'||saved==='light'?saved:matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light'})()
+</script>
+<style>
+:root{color-scheme:light;--bg:#f4f5f7;--panel:#fff;--panel-2:#eceef1;--ink:#16181d;--muted:#5b616e;--line:#dfe2e7;--accent:#1f4fd8;--on-accent:#fff;--accent-soft:#e6ecfd;--warn:#8a5300;--warn-soft:#fbf0dc;--bad:#b3261e;--shadow:0 1px 2px rgb(22 24 29/.06)}
+:root[data-theme=dark]{color-scheme:dark;--bg:#101216;--panel:#181b20;--panel-2:#22262c;--ink:#eceef1;--muted:#a0a6b1;--line:#2c3037;--accent:#8fadff;--on-accent:#0d1530;--accent-soft:#1d2740;--warn:#eab765;--warn-soft:#33280f;--bad:#f2968f;--shadow:none}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;display:flex;flex-direction:column;min-height:100dvh}
+button,input{font:inherit;color:inherit}
+button{cursor:pointer}
+a{color:var(--accent)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+header{background:var(--panel);border-bottom:1px solid var(--line)}
+.bar{display:flex;align-items:center;gap:16px;padding:10px 16px;flex-wrap:wrap}
+h1{font-size:17px;font-weight:700;margin:0;letter-spacing:-.02em}
+h1 a{color:inherit;text-decoration:none}
+h1 small{font-weight:500;color:var(--muted)}
+.seg{display:inline-flex;background:var(--panel-2);border-radius:8px;padding:3px;gap:2px}
+.seg button{background:none;border:0;border-radius:6px;padding:5px 12px;color:var(--muted);font-weight:500;white-space:nowrap}
+.seg button:hover{color:var(--ink)}
+.seg button[aria-pressed=true]{background:var(--panel);color:var(--ink);box-shadow:var(--shadow)}
+.seg b{font-weight:500;font-variant-numeric:tabular-nums;margin-left:5px;color:var(--muted)}
+.search{flex:1;min-width:180px;max-width:420px;margin-left:auto}
+.search input{width:100%;padding:6px 10px;background:var(--bg);border:1px solid var(--line);border-radius:8px}
+main{flex:1;display:grid;grid-template-columns:minmax(340px,460px) 1fr;min-height:0}
+#list{overflow-y:auto;margin:0;padding:0;list-style:none;border-right:1px solid var(--line);background:var(--panel)}
+.row{border-bottom:1px solid var(--line)}
+.row:hover{background:var(--bg)}
+.row.on{background:var(--accent-soft)}
+.pick{display:block;width:100%;text-align:left;background:none;border:0;padding:12px 14px;color:inherit}
+.pick h2{font-size:14px;font-weight:600;margin:0;line-height:1.3;overflow-wrap:anywhere}
+.sub{color:var(--muted);font-size:13px}
+.chips{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
+.chip{font-size:12px;padding:0 7px;border-radius:5px;background:var(--panel-2);line-height:20px;white-space:nowrap}
+.chip.good{background:var(--accent-soft);color:var(--accent)}.row.on .chip.good{background:var(--panel)}
+.chip.warn{background:var(--warn-soft);color:var(--warn)}
+.chip.miss{background:none;box-shadow:inset 0 0 0 1px var(--line);color:var(--muted)}
+#detail{overflow-y:auto;min-height:0}
+.sticky{position:sticky;top:0;background:var(--bg);padding:18px 28px 12px;border-bottom:1px solid var(--line)}
+.sticky h2{font-size:21px;line-height:1.25;letter-spacing:-.015em;margin:0;overflow-wrap:anywhere}
+.actions{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+.btn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--panel);border-radius:8px;padding:7px 13px;font-weight:550;text-decoration:none;color:var(--ink);white-space:nowrap}
+.btn:hover{border-color:var(--muted)}
+.btn[aria-pressed=true]{background:var(--panel-2);border-color:var(--muted)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.push{margin-left:auto}
+.body{padding:16px 28px 48px;max-width:820px}
+.desc{white-space:pre-line;overflow-wrap:anywhere;max-width:70ch;line-height:1.6}
+.empty{padding:48px 24px;color:var(--muted);text-align:center}
+.empty strong{display:block;color:var(--ink);margin-bottom:4px}
+footer{padding:5px 16px;border-top:1px solid var(--line);color:var(--muted);font-size:12px;background:var(--panel)}
+.back{display:none}
+@media (max-width:820px){
+ main{display:block;overflow:hidden;position:relative}
+ #list{height:100%;border-right:0}
+ #detail{position:absolute;inset:0;background:var(--bg);display:none}
+ body.reading #detail{display:block}
+ .back{display:inline-flex;margin-bottom:10px}
+ .sticky{padding:12px 16px}.body{padding:14px 16px 40px}
+ .push{margin-left:0}
+ .search{max-width:none;flex-basis:100%}
+ body.reading header{display:none}
+}
+</style>
+</head>
+<body>
+<header>
+  <div class="bar">
+    <h1><a href="/">Scout</a> <small>/ Trainee, internship &amp; scholarship programmes</small></h1>
+    <div class="seg" id="views" role="group" aria-label="Which programmes"></div>
+    <div class="seg" id="kinds" role="group" aria-label="Kind"></div>
+    <label class="search"><input type="search" id="q" placeholder="Search title, company, place or text" aria-label="Search"></label>
+  </div>
+</header>
+<main>
+  <ul id="list" aria-label="Programmes"></ul>
+  <div id="detail"></div>
+</main>
+<footer id="line" aria-live="polite"></footer>
+<script>
+const KIND={graduate:'Graduate trainee',internship:'Internship',scholarship:'Scholarship'};
+const state={view:'open',kind:'',items:[],counts:{},selected:null};
+const $=id=>document.getElementById(id);
+function h(tag,attrs={},...kids){const e=document.createElement(tag);for(const[k,v]of Object.entries(attrs)){if(k==='class')e.className=v;else if(k.startsWith('on'))e.addEventListener(k.slice(2),v);else if(v!==false&&v!=null)e.setAttribute(k,v)}for(const c of kids.flat())if(c!=null&&c!==false)e.append(c);return e}
+const safeUrl=u=>{try{const p=new URL(u);return['http:','https:'].includes(p.protocol)?p.href:null}catch{return null}};
+const ago=iso=>{if(!iso)return'';const d=Math.floor((Date.now()-new Date(iso))/864e5);return d<=0?'today':d===1?'yesterday':d<30?d+' days ago':Math.floor(d/30)+' mo ago'};
+const fmt=d=>new Date(d+'T00:00:00').toLocaleDateString(undefined,{day:'numeric',month:'short',year:'numeric'});
+function deadlineChip(p){if(!p.deadline)return h('span',{class:'chip miss'},'No deadline given');
+  const today=new Date();today.setHours(0,0,0,0);const days=Math.round((new Date(p.deadline+'T00:00:00')-today)/864e5);
+  if(days<0)return h('span',{class:'chip miss'},'Closed '+fmt(p.deadline));
+  return h('span',{class:'chip '+(days<=7?'warn':'good')},days===0?'Closes today':days===1?'Closes tomorrow':days<=14?`Closes in ${days} days`:'Closes '+fmt(p.deadline))}
+const shown=()=>{const terms=$('q').value.toLowerCase().split(/\s+/).filter(Boolean);
+  return state.items.filter(p=>(!state.kind||p.kind===state.kind)&&terms.every(t=>`${p.title} ${p.company} ${p.location} ${p.description}`.toLowerCase().includes(t)))};
+const current=()=>state.items.find(p=>p.id===state.selected);
+function renderSegs(){const c=state.counts,k=state.items;
+  $('views').replaceChildren(...[['open','Open',c.open],['applied','Applied',c.applied],['hidden','Hidden',c.hidden]].map(([v,n,x])=>h('button',{'aria-pressed':String(state.view===v),onclick(){state.view=v;state.selected=null;load()}},n,x?h('b',{},String(x)):null)));
+  $('kinds').replaceChildren(...[['','All',k.length],['graduate','Graduate trainee',k.filter(p=>p.kind==='graduate').length],['internship','Internship',k.filter(p=>p.kind==='internship').length],['scholarship','Scholarship',k.filter(p=>p.kind==='scholarship').length]].map(([v,n,x])=>h('button',{'aria-pressed':String(state.kind===v),onclick(){state.kind=v;state.selected=null;render()}},n,h('b',{},String(x)))))}
+function row(p){return h('li',{class:'row'+(p.id===state.selected?' on':'')},h('button',{class:'pick',onclick(){state.selected=p.id;render();document.body.classList.add('reading')}},
+  h('h2',{},p.title),h('div',{class:'sub'},[p.company,p.location].filter(Boolean).join(' · ')),
+  h('div',{class:'chips'},deadlineChip(p),h('span',{class:'chip'},KIND[p.kind]),p.salary&&h('span',{class:'chip'},p.salary),h('span',{class:'chip miss'},'Posted '+ago(p.posted_at)))))}
+async function mark(p,status){const next=p.status===status?null:status;
+  const r=await fetch('/api/programme',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({job_id:p.id,status:next})});
+  if(!r.ok){alert('Could not save that. Is Scout still running?');return}
+  const list=shown(),i=list.findIndex(x=>x.id===p.id);const after=list[i+1]||list[i-1];state.selected=after?after.id:null;await load()}
+function renderDetail(){const p=current(),d=$('detail');if(!p){d.replaceChildren();document.body.classList.remove('reading');return}
+  const page=safeUrl(p.url),apply=safeUrl(p.apply_url);
+  d.replaceChildren(h('div',{class:'sticky'},
+      h('button',{class:'btn back',onclick(){document.body.classList.remove('reading')}},'Back to list'),
+      h('h2',{},p.title),h('div',{class:'sub'},[p.company,p.location,KIND[p.kind],p.salary,'posted '+ago(p.posted_at)].filter(Boolean).join(', ')),
+      h('div',{class:'chips'},deadlineChip(p)),
+      h('div',{class:'actions'},
+        h('button',{class:'btn','aria-pressed':String(p.status==='applied'),onclick(){mark(p,'applied')}},p.status==='applied'?'Applied '+ago(p.status_at):'Mark applied'),
+        h('button',{class:'btn','aria-pressed':String(p.status==='hidden'),onclick(){mark(p,'hidden')}},p.status==='hidden'?'Unhide':'Hide'),
+        page&&h('a',{class:'btn push',href:page,target:'_blank',rel:'noopener'},'Full listing'),
+        apply&&h('a',{class:'btn primary'+(page?'':' push'),href:apply,target:'_blank',rel:'noopener'},'Apply'))),
+    h('div',{class:'body'},h('div',{class:'desc'},p.description||'No description. Open the full listing.')));
+  d.scrollTop=0}
+function render(){renderSegs();const list=shown(),l=$('list');
+  if(!list.length){const msg={open:['Nothing open','Run an ingest to fetch programmes, or clear the search.'],applied:['Nothing marked as applied','Programmes you apply to stay here, even after the 60-day cleanup.'],hidden:['Nothing hidden','Programmes you hide land here.']}[state.view];
+    l.replaceChildren(h('li',{class:'empty'},h('strong',{},msg[0]),msg[1]));state.selected=null}
+  else{if(!list.some(p=>p.id===state.selected))state.selected=list[0].id;l.replaceChildren(...list.map(row))}
+  renderDetail();
+  $('line').textContent=`${list.length} ${list.length===1?'programme':'programmes'}. ${state.view==='open'?'Closing soonest first; past deadlines drop off. ':''}From jobs.revicemycv.com.`}
+async function load(){try{const r=await fetch('/api/programmes?view='+state.view);if(!r.ok)throw 0;const data=await r.json();state.items=data.programmes;state.counts=data.counts;render()}
+  catch{$('list').replaceChildren(h('li',{class:'empty'},h('strong',{},'Could not load programmes'),'Scout may have stopped. Run: uv run scout serve'))}}
+let t;$('q').addEventListener('input',()=>{clearTimeout(t);t=setTimeout(()=>{state.selected=null;render()},200)});
+load();
+</script>
+</body>
+</html>

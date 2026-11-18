@@ -7,7 +7,7 @@ from pathlib import Path
 from threading import Lock
 from urllib.parse import parse_qs, urlparse
 
-from . import store
+from . import programmes, store
 from .ranker import Ranker
 
 WEB = Path(__file__).resolve().parent.parent / "web"
@@ -31,6 +31,15 @@ def serve(ranker: Ranker, port: int) -> None:
             url = urlparse(self.path)
             if url.path == "/":
                 return self._send(200, (WEB / "index.html").read_bytes(), "text/html; charset=utf-8")
+            if url.path == "/programmes":
+                return self._send(200, (WEB / "programmes.html").read_bytes(), "text/html; charset=utf-8")
+            if url.path == "/api/programmes":
+                view = parse_qs(url.query).get("view", ["open"])[0]
+                if view not in ("open", *programmes.STATUSES):
+                    return self._send(400, b'{"error":"bad view"}')
+                with lock:
+                    data = {"programmes": programmes.listing(ranker.db, view), "counts": programmes.counts(ranker.db)}
+                return self._send(200, json.dumps(data).encode())
             if url.path == "/api/jobs":
                 q = {k: v[0] for k, v in parse_qs(url.query).items()}
                 try:
@@ -48,7 +57,8 @@ def serve(ranker: Ranker, port: int) -> None:
 
         def do_POST(self):
             # Requiring JSON stops other websites posting here from your browser with a plain form.
-            if self.path not in ("/api/feedback", "/api/stage", "/api/reason") or self.headers.get("Content-Type") != "application/json":
+            if self.path not in ("/api/feedback", "/api/stage", "/api/reason", "/api/programme") \
+                    or self.headers.get("Content-Type") != "application/json":
                 return self._send(404, b'{"error":"not found"}')
             try:
                 body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)))
@@ -57,6 +67,14 @@ def serve(ranker: Ranker, port: int) -> None:
                 return self._send(400, b'{"error":"bad request"}')
             if not isinstance(job_id, str):
                 return self._send(400, b'{"error":"bad job"}')
+            if self.path == "/api/programme":
+                status = body.get("status")
+                if status is not None and status not in programmes.STATUSES:
+                    return self._send(400, b'{"error":"bad status"}')
+                with lock:
+                    if not programmes.set_status(ranker.db, job_id, status):
+                        return self._send(404, b'{"error":"no such programme"}')
+                return self._send(200, b'{"ok":true}')
             if self.path == "/api/stage":
                 stage = body.get("stage")
                 if stage is not None and stage not in store.STAGES:
