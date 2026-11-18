@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<link rel="icon" href="/logo.svg" type="image/svg+xml">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Scout</title>
 <script>
@@ -21,7 +22,8 @@ button{cursor:pointer}
 svg{width:1.2em;height:1.2em;flex:none;display:block}
 header{background:var(--panel);border-bottom:1px solid var(--line)}
 .bar{display:flex;align-items:center;gap:16px;padding:10px 16px;flex-wrap:wrap}
-h1{font-size:17px;font-weight:700;margin:0;letter-spacing:-.02em}
+h1{font-size:17px;font-weight:700;margin:0;letter-spacing:-.02em;display:flex;align-items:center;gap:10px}
+h1 .logo{display:block}
 .seg{display:inline-flex;background:var(--panel-2);border-radius:8px;padding:3px;gap:2px}
 .seg button{background:none;border:0;border-radius:6px;padding:5px 12px;color:var(--muted);font-weight:500;white-space:nowrap}
 .seg button:hover{color:var(--ink)}
@@ -137,7 +139,7 @@ kbd{font:inherit;font-weight:600;color:var(--ink)}
 <body>
 <header>
   <div class="bar">
-    <h1>Scout</h1>
+    <h1><img class="logo" src="/logo.svg" alt="Scout" width="32" height="32"></h1>
     <div class="seg" id="lanes" role="group" aria-label="Where"></div>
     <div class="seg" id="views" role="group" aria-label="Which jobs"></div>
     <a class="btn" href="/programmes" title="Graduate trainee and internship programmes">Programmes</a>
@@ -266,7 +268,7 @@ async function react(j,action){
   try{await post(j.id,next)}catch{toast('Is Scout still running?',null,{title:'Could not save that',icon:'warn'});return}
   if(next&&next!==(state.view==='new'?'like':state.view)&&state.selected===j.id){const after=state.jobs[i+1]||state.jobs[i-1];if(after)state.selected=after.id}
   await load({keepScroll:true});
-  const undo=async()=>{await post(j.id,before);if(before==='applied'&&j.stage)await postStage(j.id,j.stage);if(before==='dislike'&&j.reason)await postReason(j.id,j.reason);state.selected=j.id;await load({keepScroll:true})};
+  const undo=async()=>{if(before&&next)await post(j.id,null);await post(j.id,before);if(before==='applied'&&j.stage)await postStage(j.id,j.stage);if(before==='dislike'&&j.reason)await postReason(j.id,j.reason);state.selected=j.id;await load({keepScroll:true})};
   if(next==='like')toast('Similar jobs moved up.',undo,{title:'Liked',icon:'upFill',tone:'good'});
   else if(next==='dislike')toast('What was off? Your answer decides what moves down.',undo,{title:'Hidden from your list',icon:'hide',
     choices:Object.entries(REASON).map(([v,n])=>[n,REASON_HINT[v][1],REASON_HINT[v][0],()=>setReason(j,v)])});

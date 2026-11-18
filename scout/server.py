@@ -65,6 +65,8 @@ def serve(ranker: Ranker, port: int, pilot_db: Path | None = None) -> None:
                 return self._send(200, (WEB / "pilot.html").read_bytes(), "text/html; charset=utf-8")
             if url.path == "/programmes":
                 return self._send(200, (WEB / "programmes.html").read_bytes(), "text/html; charset=utf-8")
+            if url.path in ("/logo.svg", "/favicon.ico"):  # Browsers that skip the <link> still ask for /favicon.ico.
+                return self._send(200, (WEB / "logo.svg").read_bytes(), "image/svg+xml")
             if url.path == "/api/programmes":
                 view = parse_qs(url.query).get("view", ["open"])[0]
                 if view not in ("open", *programmes.STATUSES):

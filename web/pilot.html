@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<link rel="icon" href="/logo.svg" type="image/svg+xml">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Scout · Company pilot</title>
 <script>
@@ -19,7 +20,8 @@ a{color:var(--accent)}
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 header{background:var(--panel);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:2}
 .bar{display:flex;align-items:center;gap:16px;padding:10px 16px;flex-wrap:wrap}
-h1{font-size:17px;font-weight:700;margin:0;letter-spacing:-.02em}
+h1{font-size:17px;font-weight:700;margin:0;letter-spacing:-.02em;display:flex;align-items:center;gap:10px}
+h1 .logo{display:block}
 h1 small{font-weight:500;color:var(--muted)}
 .back{font-size:13px}
 .seg{display:inline-flex;background:var(--panel-2);border-radius:8px;padding:3px;gap:2px;flex-wrap:wrap}
@@ -99,7 +101,7 @@ td.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
 <body>
 <header>
   <div class="bar">
-    <h1>Scout <small>· company pilot</small></h1>
+    <h1><img class="logo" src="/logo.svg" alt="Scout" width="32" height="32"> <small>Company pilot</small></h1>
     <a class="back" href="/">← Jobs</a>
     <div class="seg" id="groups" role="group" aria-label="What the careers page does"></div>
     <label class="search"><input id="q" type="search" placeholder="Search name, website, email, industry, note…" aria-label="Search companies"></label>
