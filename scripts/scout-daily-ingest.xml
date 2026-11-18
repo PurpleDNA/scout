@@ -1,0 +1,46 @@
+<?xml version="1.0"?>
+<!-- Windows Task Scheduler task: run scripts/daily-ingest.sh at every logon and unlock.
+     The script itself makes sure ingest only happens once a day. Register with:
+       Register-ScheduledTask -TaskName "Scout daily ingest" -Xml (Get-Content -Raw scout-daily-ingest.xml)
+-->
+<Task version="1.4" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo>
+    <Description>Fetch new jobs for Scout once a day, at the first logon or unlock.</Description>
+  </RegistrationInfo>
+  <Triggers>
+    <LogonTrigger>
+      <Enabled>true</Enabled>
+      <UserId>PURPLE-DNA\HP</UserId>
+      <Delay>PT1M</Delay>
+    </LogonTrigger>
+    <SessionStateChangeTrigger>
+      <Enabled>true</Enabled>
+      <StateChange>SessionUnlock</StateChange>
+      <UserId>PURPLE-DNA\HP</UserId>
+      <Delay>PT30S</Delay>
+    </SessionStateChangeTrigger>
+  </Triggers>
+  <Principals>
+    <Principal id="Author">
+      <UserId>PURPLE-DNA\HP</UserId>
+      <LogonType>InteractiveToken</LogonType>
+      <RunLevel>LeastPrivilege</RunLevel>
+    </Principal>
+  </Principals>
+  <Settings>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <StartWhenAvailable>true</StartWhenAvailable>
+    <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>
+    <ExecutionTimeLimit>PT2H</ExecutionTimeLimit>
+    <Enabled>true</Enabled>
+  </Settings>
+  <Actions Context="Author">
+    <Exec>
+      <!-- conhost headless keeps a console window from sitting on screen while ingest runs. -->
+      <Command>C:\Windows\System32\conhost.exe</Command>
+      <Arguments>--headless C:\Windows\System32\wsl.exe -d Ubuntu -u purpledna --exec /home/purpledna/projects/scout/scripts/daily-ingest.sh</Arguments>
+    </Exec>
+  </Actions>
+</Task>
