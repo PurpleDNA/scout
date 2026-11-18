@@ -39,7 +39,7 @@ Skills must exist in `SKILLS` in `scout/matching.py`. To follow more companies, 
 ## How it works
 
 ```
-sources.py      13 public feeds and job boards  →  RawJob
+sources.py      20 public feeds, job boards and hiring systems  →  RawJob
 eligibility.py  Can someone in Lagos take this?  →  lane, scope, confidence, evidence
 matching.py     How well does it fit the profile? →  score and breakdown
 ranker.py       Filter, apply feedback, diversify →  recommendations
@@ -83,6 +83,12 @@ From the public site and its public JavaScript bundle, without calling its priva
 - **Nigerian places are a word list** in `scout/eligibility.py`: cities, states and Lagos areas. It decides whether a remote job is tied to Nigeria, and which postings get their text read for remote or hybrid wording. A place it doesn't know is treated as abroad. Names shared with places abroad only count with a qualifier ("Benin City", "Delta State"), and Lagos areas such as Maryland and Marina only count alongside "Lagos".
 - **Nigeria scores are rougher** because they're based on those excerpts rather than full postings.
 - **Eligibility is rule-based and will sometimes be wrong.** Boards' labels can't always be trusted, and the rules only catch restrictions phrased in ways they recognise. Read the posting before applying. `scout audit` shows every decision.
+- **Workday boards only return their Nigerian openings,** found through the board's own country or city filter. A board with nothing in Nigeria returns nothing.
+- **SuccessFactors is read from the sitemap and each job's page.** The RSS feed sits under `/services/`, which these sites' robots.txt disallows. Older SuccessFactors portals (`career2.successfactors.eu/career?company=…`) need a browser and aren't read. Closed jobs that are still in the sitemap are skipped.
+- **Oracle Recruiting boards only return Nigerian and remote openings,** since boards such as MTN's cover the whole group. A slug the crawl reports as a bare host still needs its site number (`CX_1` and so on) from the careers link before it goes into `ORACLE`.
+- **SmartRecruiters is read from the public careers page,** not its Posting API: `api.smartrecruiters.com`'s robots.txt only admits LinkedIn's crawler. Only openings grouped under a Nigerian or remote location are read. Deloitte's West Africa board also recruits for its clients (ECOWAS, hospitals), so those jobs show Deloitte as the company.
+- **Breezy's listing has no descriptions,** so each job's page is fetched for one.
+- **Some Zoho boards leave out descriptions,** so those jobs are matched on the title alone.
 - **BambooHR's setup field is inferred.** Its on-site, remote and hybrid codes were worked out from live boards, as they aren't documented.
 - **HTML sources can break** if Jobberman or MyJobMag change their markup. `ingest` reports a count per source, so a drop to 0 is visible.
 

@@ -227,9 +227,9 @@ def weworkremotely() -> Iterable[RawJob]:
 
 # ---------- company boards (public ATS APIs) ----------
 # Remote-friendly or Lagos-hiring companies. Add any company by its slug on that ATS.
-GREENHOUSE = ["moniepoint", "remote", "gitlab", "canonical", "grafanalabs", "elastic", "mozilla", "wikimedia", "vercel"]
+GREENHOUSE = ["moniepoint", "remote", "gitlab", "canonical", "grafanalabs", "elastic", "mozilla", "wikimedia", "vercel", "jumia"]
 LEVER = ["tala", "kraken", "binance"]
-ASHBY = ["andela", "sabi", "deel", "zapier", "posthog", "supabase"]
+ASHBY = ["andela", "sabi", "deel", "zapier", "posthog", "supabase", "lemfi"]
 
 
 def _each_board(slugs: list[str], url: str) -> Iterable[tuple[str, object]]:
@@ -281,7 +281,9 @@ def ashby() -> Iterable[RawJob]:
                          employment=employment_of(j.get("employmentType"), j["title"]))
 
 
-BAMBOOHR = {"chowdeck": "Chowdeck", "paga": "Paga", "yellowcard": "Yellow Card", "cellulant": "Cellulant", "grey": "Grey", "risevest": "Risevest"}
+BAMBOOHR = {"chowdeck": "Chowdeck", "paga": "Paga", "yellowcard": "Yellow Card", "cellulant": "Cellulant", "grey": "Grey", "risevest": "Risevest",
+            "lekoil": "Lekoil", "verodcapitalmanagement": "Verod Capital",
+            "completefarmer": "Complete Farmer"}  # Ghanaian; listed on the careers page of its investor Ingressive Capital.
 # Inferred from live boards (Paga on-site in Yaba, Chowdeck hybrid in Ikoyi, Yellow Card remote). BambooHR doesn't document this.
 _BAMBOO_SETUP = {"0": "onsite", "1": "remote", "2": "hybrid"}
 
@@ -323,6 +325,402 @@ def parse_teamtailor(feed: str, slug: str) -> Iterable[RawJob]:
 def teamtailor() -> Iterable[RawJob]:
     for slug in TEAMTAILOR:
         yield from parse_teamtailor(get(f"https://{slug}.teamtailor.com/jobs.rss"), slug)
+
+
+# The hiring systems Nigerian corporates use, found by `scout companies crawl`.
+WORKABLE = {"firstepdcng": "FIRST E&P", "dangote": "Dangote"}
+
+
+def parse_workable(data: dict, slug: str) -> Iterable[RawJob]:
+    company = WORKABLE.get(slug) or data.get("name") or slug
+    for j in data.get("jobs", []):
+        places = [", ".join(filter(None, (p.get("city"), p.get("region"), p.get("country")))) for p in j.get("locations") or []]
+        place = "; ".join(dict.fromkeys(p for p in places if p)) or ", ".join(filter(None, (j.get("city"), j.get("country"))))
+        yield RawJob("workable", f"{slug}:{j['shortcode']}", j["title"].strip(), company, j.get("url") or j.get("shortlink"),
+                     location=place, workplace="remote" if j.get("telecommuting") else None,
+                     description=text_of(j.get("description"), True), tags=[t for t in (j.get("department"), j.get("function")) if t],
+                     posted_at=iso(j.get("published_on") or j.get("created_at")),
+                     employment=employment_of(j.get("employment_type"), j["title"]))
+
+
+def workable() -> Iterable[RawJob]:
+    for slug, data in _each_board(list(WORKABLE), "https://apply.workable.com/api/v1/widget/accounts/{}?details=true"):
+        yield from parse_workable(data, slug)
+
+
+ZOHO = {"polarisbanklimited": "Polaris Bank", "babbangona": "Babban Gona", "sfhnigeria": "Society for Family Health", "hamulegal": "HAMU Legal"}
+_ZOHO_JOBS = re.compile(r'<input type="hidden" value="([^"]*)" id="jobs"')
+_GENERAL_APPLICATION = re.compile(r"submit your (cv|resume)|talent (pool|community)|general application|other roles|"
+                                  r"speculative application|initiativbewerbung", re.I)
+
+
+def parse_zoho(page: str, slug: str) -> Iterable[RawJob]:
+    """Zoho's careers page carries its openings as JSON in a hidden input."""
+    m = _ZOHO_JOBS.search(page)
+    if not m:
+        raise ValueError(f"{slug}: no job data on the careers page")
+    for j in json.loads(html.unescape(m[1])):
+        title = (j.get("Posting_Title") or j.get("Job_Opening_Name") or "").strip()
+        if str(j.get("Publish")) != "True" or not title or _GENERAL_APPLICATION.search(title):
+            continue
+        place = ", ".join(dict.fromkeys(x for x in (j.get("City"), j.get("State"), j.get("Country")) if x and x != "None"))
+        opened = j.get("Date_Opened")
+        yield RawJob("zoho", f"{slug}:{j['id']}", title, ZOHO.get(slug, slug), f"https://{slug}.zohorecruit.com/jobs/Careers/{j['id']}",
+                     location=place, workplace="remote" if str(j.get("Remote_Job")) == "True" else None,
+                     description=text_of(j.get("Job_Description"), True), tags=[j.get("Industry") or ""],
+                     posted_at=iso(opened) if opened and opened != "None" else None,
+                     employment=employment_of(j.get("Job_Type"), title))
+
+
+def zoho() -> Iterable[RawJob]:
+    failed = []
+    for slug in ZOHO:
+        try:
+            yield from parse_zoho(get(f"https://{slug}.zohorecruit.com/jobs/Careers"), slug)
+        except (OSError, ValueError) as e:
+            failed.append(f"{slug}: {e}")
+        time.sleep(1)
+    if failed:
+        raise RuntimeError("; ".join(failed))
+
+
+# Workday boards are global, so only their Nigerian openings are read.
+WORKDAY = {
+    "Shell": "shell.wd3.myworkdayjobs.com/ShellCareers",
+    "Visa": "visa.wd5.myworkdayjobs.com/Visa",
+    "Mastercard": "mastercard.wd1.myworkdayjobs.com/CorporateCareers",
+    "Unilever": "unilever.wd3.myworkdayjobs.com/Unilever_Experienced_Professionals",
+    "Absa": "absa.wd3.myworkdayjobs.com/ABSAcareersite",
+    "Rand Merchant Bank": "firstrand.wd3.myworkdayjobs.com/FRB",
+    "NCR": "ncr.wd1.myworkdayjobs.com/ext_apac",
+}
+
+
+def post_json(url: str, body: dict):
+    req = urllib.request.Request(url, data=json.dumps(body).encode(), method="POST",
+                                 headers={"User-Agent": USER_AGENT, "Content-Type": "application/json", "Accept": "application/json"})
+    with urllib.request.urlopen(req, timeout=40) as r:
+        return json.loads(r.read().decode("utf-8", "ignore"))
+
+
+def workday_nigeria_facets(facets: list[dict]) -> dict[str, list[str]]:
+    """Facet values naming Nigeria. Country facets win over city ones, since the country already covers its cities."""
+    found: dict[str, list[str]] = {}
+
+    def walk(param: str | None, values: list[dict]):
+        for v in values:
+            if "values" in v:
+                walk(v.get("facetParameter") or param, v["values"])
+            elif param and "nigeria" in str(v.get("descriptor")).lower():
+                found.setdefault(param, []).append(v["id"])
+    for f in facets:
+        walk(f.get("facetParameter"), f.get("values") or [])
+    for country in ("locationCountry", "Location_Country"):
+        if country in found:
+            return {country: found[country]}
+    return found
+
+
+def workday() -> Iterable[RawJob]:
+    failed = []
+    for company, board in WORKDAY.items():
+        host, site = board.split("/", 1)
+        api = f"https://{host}/wday/cxs/{host.split('.')[0]}/{site}"
+        try:
+            facets = workday_nigeria_facets(post_json(f"{api}/jobs", {"appliedFacets": {}, "limit": 1, "offset": 0, "searchText": ""}).get("facets", []))
+            if not facets:
+                continue  # Nothing open in Nigeria right now.
+            offset, total = 0, 1
+            while offset < total:
+                page = post_json(f"{api}/jobs", {"appliedFacets": facets, "limit": 20, "offset": offset, "searchText": ""})
+                total = page.get("total") or 0
+                for j in page.get("jobPostings", []):
+                    info = json.loads(get(api + j["externalPath"])).get("jobPostingInfo", {})
+                    time.sleep(0.5)
+                    yield RawJob("workday", f"{host.split('.')[0]}:{j['externalPath'].rsplit('_', 1)[-1]}", j["title"], company,
+                                 info.get("externalUrl") or f"https://{host}/{site}{j['externalPath']}",
+                                 location=info.get("location") or j.get("locationsText") or "",
+                                 workplace=(info.get("remoteType") or "").lower() or None,
+                                 description=text_of(info.get("jobDescription"), True),
+                                 posted_at=iso(info.get("startDate")) or relative_date(j.get("postedOn") or ""),
+                                 employment=employment_of(info.get("timeType"), j["title"]))
+                offset += 20
+        except (OSError, ValueError, KeyError) as e:
+            failed.append(f"{company}: {e!r}"[:200])
+    if failed:
+        raise RuntimeError("; ".join(failed))
+
+
+# SuccessFactors career sites (Career Site Builder). Their RSS feed sits under /services/, which their robots.txt
+# disallows, so jobs come from the sitemap and each job's own page. Default location for sites that leave it blank.
+SUCCESSFACTORS = {"careers.nlng.com": ("Nigeria LNG", "Nigeria"), "careers.jubailiagrotecgroup.com": ("Jubaili Agrotec", "")}
+
+
+def _sf_field(page: str, label: str) -> str:
+    m = re.search(rf'joblayouttoken-label"[^>]*>\s*{label}:?\s*</span>\s*<span[^>]*>(.*?)</span>', page, re.S | re.I)
+    return text_of(m[1]) if m else ""
+
+
+def parse_successfactors_job(page: str, url: str, host: str) -> RawJob | None:
+    company, default_place = SUCCESSFACTORS.get(host, (host, ""))
+    title = re.search(r'itemprop="title"[^>]*>(.*?)</span>', page, re.S)
+    if not title:
+        return None
+    desc = re.search(r'itemprop="description"[^>]*>(.*?)</span>\s*</div>\s*</div>\s*</div>\s*</div>', page, re.S)
+    date = _sf_field(page, r"(?:Posting Start Date|Date Posted|Posted Date|Date)")
+    posted = None
+    if m := re.match(r"(\d{1,2})/(\d{1,2})/(\d{4})", date):
+        day, month = (m[1], m[2]) if 'lang="en-US"' not in page[:3000] else (m[2], m[1])
+        posted = iso(f"{m[3]}-{int(month):02d}-{int(day):02d}")
+    job_id = re.search(r"/(\d{6,})/?$", url)
+    return RawJob("successfactors", f"{host}:{job_id[1] if job_id else url}", text_of(title[1]), company, url,
+                  location=_sf_field(page, r"(?:Job Location|Location)") or default_place,
+                  description=text_of(desc[1] if desc else "", True), posted_at=posted, employment=employment_of(text_of(title[1])))
+
+
+def successfactors() -> Iterable[RawJob]:
+    failed = []
+    for host in SUCCESSFACTORS:
+        try:
+            urls = re.findall(r"<loc>([^<]+/job/[^<]+)</loc>", get(f"https://{host}/sitemap.xml"))
+            for url in urls:
+                time.sleep(1)
+                if job := parse_successfactors_job(get(html.unescape(url)), html.unescape(url), host):
+                    yield job
+        except (OSError, ValueError) as e:
+            failed.append(f"{host}: {e!r}"[:200])
+    if failed:
+        raise RuntimeError("; ".join(failed))
+
+
+# Breezy's /json lists a board's openings without descriptions, so each job's own page supplies those.
+BREEZY = {"cowrywise": "Cowrywise", "oando": "Oando"}
+_BREEZY_DESC = re.compile(r'<div class="description">(.*?)</div><div class="apply-container">', re.S)
+
+
+def _breezy_place(p: dict) -> str:
+    name, country = p.get("name") or "", (p.get("country") or {}).get("name") or ""
+    return name if country in name else ", ".join(filter(None, (name, country)))
+
+
+def parse_breezy(jobs: list[dict], slug: str) -> Iterable[tuple[RawJob, str]]:
+    """Each job, with the page its description comes from."""
+    for j in jobs:
+        places = j.get("locations") or [j.get("location") or {}]
+        place = "; ".join(dict.fromkeys(filter(None, map(_breezy_place, places))))
+        remote = any(p.get("is_remote") for p in places)
+        job = RawJob("breezy", f"{slug}:{j['id']}", j["name"].strip(), BREEZY.get(slug) or (j.get("company") or {}).get("name") or slug,
+                     j["url"], location=place, workplace="remote" if remote else None, tags=[j["department"]] if j.get("department") else [],
+                     salary=j.get("salary") or "", posted_at=iso(j.get("published_date")),
+                     employment=employment_of((j.get("type") or {}).get("name"), j["name"]))
+        yield job, j["url"]
+
+
+def breezy() -> Iterable[RawJob]:
+    for slug, data in _each_board(list(BREEZY), "https://{}.breezy.hr/json"):
+        for job, page_url in parse_breezy(data, slug):
+            try:
+                if m := _BREEZY_DESC.search(get(page_url)):
+                    job.description = text_of(m[1], True)
+            except OSError:
+                pass  # The listing alone is still worth keeping.
+            time.sleep(1)
+            yield job
+
+
+# SmartRecruiters' Posting API sits on api.smartrecruiters.com, whose robots.txt disallows everyone but LinkedIn's bot,
+# so jobs come from the public careers page instead. It groups openings by location; only Nigerian and remote groups are read.
+SMARTRECRUITERS = {"Deloitte6": "Deloitte (West Africa)"}
+_SR_GROUP = re.compile(r'<section[^>]*class="openings-section[^"]*"[^>]*>(.*?)</section>', re.S)
+_SR_GROUP_TITLE = re.compile(r'class="opening-title[^"]*"[^>]*>(.*?)</h3>', re.S)
+_SR_JOB_LINK = re.compile(r'<a href="(https://jobs\.smartrecruiters\.com/[^"]+/(\d+)-[^"]*)"', re.S)
+
+
+def smartrecruiters_job_links(page: str) -> list[tuple[str, str, str]]:
+    """(location heading, job url, job id) for the groups worth reading."""
+    out = []
+    for group in _SR_GROUP.findall(page):
+        heading = text_of(m[1]).lstrip(":").strip() if (m := _SR_GROUP_TITLE.search(group)) else ""
+        if re.search(r"nigeria|lagos|remote", heading, re.I):
+            out += [(heading, url, job_id) for url, job_id in _SR_JOB_LINK.findall(group)]
+    return out
+
+
+def _itemprop(page: str, name: str) -> str:
+    m = re.search(rf'<meta itemprop="{name}" content="([^"]*)"', page)
+    return html.unescape(m[1]).strip() if m else ""
+
+
+def parse_smartrecruiters_job(page: str, url: str, job_id: str, company: str, heading: str) -> RawJob | None:
+    title = re.search(r'itemprop="title"[^>]*>(.*?)</h1>', page, re.S)
+    if not title:
+        return None
+    start = page.find('itemprop="description"')
+    desc = page[start:page.find("</section></div>", start)] if start >= 0 else ""
+    place = ", ".join(x for x in (_itemprop(page, "addressLocality"), _itemprop(page, "addressRegion"), _itemprop(page, "addressCountry")) if x)
+    kind = re.search(r'itemprop="employmentType"[^>]*>(.*?)<', page)
+    remote = "remote" in heading.lower() or bool(re.search(r'class="job-detail[^"]*"[^>]*>\s*Remote', page))
+    return RawJob("smartrecruiters", f"{company}:{job_id}", text_of(title[1]), company, url, location=place or heading,
+                  workplace="remote" if remote else None, description=text_of(desc.split(">", 1)[-1], True),
+                  posted_at=iso(_itemprop(page, "datePosted")), employment=employment_of(kind[1] if kind else "", text_of(title[1])))
+
+
+def smartrecruiters() -> Iterable[RawJob]:
+    failed = []
+    for slug, company in SMARTRECRUITERS.items():
+        try:
+            pages = [get(f"https://careers.smartrecruiters.com/{slug}")]
+            for n in range(1, 30):  # Further groups load in pages until one comes back empty.
+                time.sleep(1)
+                more = get(f"https://careers.smartrecruiters.com/{slug}/api/groups?page={n}")
+                if not more.strip():
+                    break
+                pages.append(more)
+            seen = set()
+            for heading, url, job_id in (link for page in pages for link in smartrecruiters_job_links(page)):
+                if job_id in seen:
+                    continue
+                seen.add(job_id)
+                time.sleep(1)
+                if job := parse_smartrecruiters_job(get(url), url, job_id, company, heading):
+                    yield job
+        except OSError as e:
+            failed.append(f"{slug}: {e!r}"[:200])
+    if failed:
+        raise RuntimeError("; ".join(failed))
+
+
+# Oracle Recruiting Cloud (Candidate Experience) boards, as host/site. Boards are often group-wide, so only
+# Nigerian and remote openings are read.
+ORACLE = {
+    "MTN": "ehle.fa.em2.oraclecloud.com/CX_1",
+    "Ecobank": "fa-emqf-saasfaprod1.fa.ocs.oraclecloud.com/CX_1004",
+}
+_ORACLE_LIST = ("https://{host}/hcmRestApi/resources/latest/recruitingCEJobRequisitions?onlyData=true"
+                "&expand=requisitionList.secondaryLocations&finder=findReqs;siteNumber={site},limit=25,offset={offset},sortBy=POSTING_DATES_DESC")
+_ORACLE_JOB = ("https://{host}/hcmRestApi/resources/latest/recruitingCEJobRequisitionDetails?expand=all&onlyData=true"
+               "&finder=ById;Id=%22{id}%22,siteNumber={site}")
+
+
+def oracle_wanted(req: dict) -> bool:
+    places = [req.get("PrimaryLocation") or ""] + [s.get("Name") or "" for s in req.get("secondaryLocations") or []]
+    return (req.get("PrimaryLocationCountry") == "NG" or any("nigeria" in p.lower() for p in places)
+            or (req.get("WorkplaceType") or "").lower() == "remote")
+
+
+# Some boards append the department after a full stop: "Developer - Software Development.Information Technology".
+_ORACLE_DEPARTMENT = re.compile(r"^(.*\S)\.([A-Z][A-Za-z&,' ]+)$")
+
+
+def parse_oracle_job(detail: dict, req: dict, company: str, host: str, site: str) -> RawJob:
+    parts = (detail.get(k) for k in ("ExternalDescriptionStr", "ExternalResponsibilitiesStr", "ExternalQualificationsStr"))
+    title, department = (detail.get("Title") or req["Title"]).strip(), ""
+    if m := _ORACLE_DEPARTMENT.match(title):
+        title, department = m[1].strip(), m[2].strip()
+    return RawJob("oracle", f"{host.split('.')[0]}:{req['Id']}", title, company,
+                  f"https://{host}/hcmUI/CandidateExperience/en/sites/{site}/job/{req['Id']}",
+                  location=detail.get("PrimaryLocation") or req.get("PrimaryLocation") or "",
+                  workplace=(req.get("WorkplaceType") or "").lower().replace("on-site", "onsite") or None,
+                  description=text_of("\n".join(p for p in parts if p), True) or req.get("ShortDescriptionStr") or "",
+                  tags=[department] if department else [],
+                  posted_at=iso(detail.get("ExternalPostedStartDate") or req.get("PostedDate")),
+                  employment=employment_of(detail.get("JobSchedule"), detail.get("RequisitionType"), title))
+
+
+def oracle() -> Iterable[RawJob]:
+    failed = []
+    for company, board in ORACLE.items():
+        host, site = board.split("/", 1)
+        try:
+            offset, total = 0, 1
+            while offset < total:
+                search = json.loads(get(_ORACLE_LIST.format(host=host, site=site, offset=offset)))["items"][0]
+                total = search.get("TotalJobsCount") or 0
+                for req in filter(oracle_wanted, search.get("requisitionList") or []):
+                    items = json.loads(get(_ORACLE_JOB.format(host=host, id=req["Id"], site=site))).get("items") or [{}]
+                    time.sleep(0.5)
+                    yield parse_oracle_job(items[0], req, company, host, site)
+                offset += 25
+                time.sleep(1)
+        except (OSError, ValueError, KeyError, IndexError) as e:
+            failed.append(f"{company}: {e!r}"[:200])
+    if failed:
+        raise RuntimeError("; ".join(failed))
+
+
+# Recruitee's public offers API. Boards can be group-wide (Julius Berger's is run from Germany), so only Nigerian
+# and remote offers are read.
+RECRUITEE = {"juliusbergerinternationalgmbh": "Julius Berger"}
+
+
+def parse_recruitee(data: dict, slug: str) -> Iterable[RawJob]:
+    for o in data.get("offers") or []:
+        places = o.get("locations") or [o]
+        if not (o.get("remote") or any(p.get("country_code") == "NG" for p in places)):
+            continue
+        title = (o.get("title") or "").strip()
+        if not title or _GENERAL_APPLICATION.search(title):
+            continue
+        setup = "remote" if o.get("remote") else "hybrid" if o.get("hybrid") else "onsite" if o.get("on_site") else None
+        yield RawJob("recruitee", f"{slug}:{o['id']}", title, RECRUITEE.get(slug) or o.get("company_name") or slug,
+                     o.get("careers_url") or f"https://{slug}.recruitee.com/o/{o['slug']}", location=o.get("location") or "",
+                     workplace=setup, description=text_of("\n".join(filter(None, (o.get("description"), o.get("requirements")))), True),
+                     tags=[o["department"]] if o.get("department") else [], posted_at=iso(o.get("published_at")),
+                     employment=employment_of((o.get("employment_type_code") or "").replace("_", " "), title))
+
+
+def recruitee() -> Iterable[RawJob]:
+    for slug, data in _each_board(list(RECRUITEE), "https://{}.recruitee.com/api/offers/"):
+        yield from parse_recruitee(data, slug)
+
+
+# Freshteam careers portals. Their robots.txt allows only /jobs, which lists the openings; each job page carries a
+# schema.org JobPosting with the full description.
+FRESHTEAM = {"emergencyresponseafrica": "Emergency Response Africa"}
+_FRESHTEAM_LINK = re.compile(r'href="(/jobs/([A-Za-z0-9_-]+)/[^"]*)"')
+_LD_JSON = re.compile(r'<script type="application/ld\+json">(.*?)</script>', re.S)
+
+
+def job_posting_ld(page: str) -> dict:
+    """The page's schema.org JobPosting, or {}."""
+    for block in _LD_JSON.findall(page):
+        try:
+            data = json.loads(block, strict=False)
+        except ValueError:
+            continue
+        for item in data.get("@graph", [data]) if isinstance(data, dict) else data:
+            if isinstance(item, dict) and item.get("@type") == "JobPosting":
+                return item
+    return {}
+
+
+def parse_freshteam_job(page: str, url: str, slug: str, job_id: str) -> RawJob | None:
+    ld = job_posting_ld(page)
+    if not ld.get("title"):
+        return None
+    address = ((ld.get("jobLocation") or {}).get("address")) or {}
+    place = ", ".join(dict.fromkeys(x for x in (address.get("addressLocality"), address.get("addressRegion"), address.get("addressCountry")) if x))
+    title = html.unescape(ld["title"]).strip()
+    return RawJob("freshteam", f"{slug}:{job_id}", title, FRESHTEAM.get(slug) or (ld.get("hiringOrganization") or {}).get("name") or slug,
+                  url, location=place, workplace="remote" if str(ld.get("remote")).lower() == "true" else None,
+                  description=text_of(html.unescape(ld.get("description") or ""), True), posted_at=iso(ld.get("datePosted")),
+                  employment=employment_of(str(ld.get("employmentType") or "").replace("_", " "), title))
+
+
+def freshteam() -> Iterable[RawJob]:
+    failed = []
+    for slug in FRESHTEAM:
+        try:
+            links = dict((job_id, path) for path, job_id in _FRESHTEAM_LINK.findall(get(f"https://{slug}.freshteam.com/jobs")))
+            for job_id, path in links.items():
+                time.sleep(1)
+                url = f"https://{slug}.freshteam.com{path}"
+                if job := parse_freshteam_job(get(url), url, slug, job_id):
+                    yield job
+        except OSError as e:
+            failed.append(f"{slug}: {e!r}"[:200])
+    if failed:
+        raise RuntimeError("; ".join(failed))
 
 
 # ---------- Lagos boards (HTML listing pages and feeds; excerpts only) ----------
@@ -407,6 +805,8 @@ def hotnigerianjobs() -> Iterable[RawJob]:
 SOURCES: dict[str, Callable[[], Iterable[RawJob]]] = {
     "himalayas": himalayas, "remotive": remotive, "remoteok": remoteok, "jobicy": jobicy,
     "weworkremotely": weworkremotely, "greenhouse": greenhouse, "lever": lever, "ashby": ashby,
-    "bamboohr": bamboohr, "teamtailor": teamtailor, "jobberman": jobberman, "myjobmag": myjobmag,
-    "hotnigerianjobs": hotnigerianjobs,
+    "bamboohr": bamboohr, "teamtailor": teamtailor, "workable": workable, "zoho": zoho, "workday": workday,
+    "successfactors": successfactors, "breezy": breezy, "smartrecruiters": smartrecruiters, "oracle": oracle,
+    "recruitee": recruitee, "freshteam": freshteam,
+    "jobberman": jobberman, "myjobmag": myjobmag, "hotnigerianjobs": hotnigerianjobs,
 }
