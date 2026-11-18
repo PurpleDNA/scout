@@ -182,3 +182,16 @@ def test_reasons_belong_to_dislikes_and_reset_when_the_reaction_changes(tmp_path
     store.set_feedback(db, "t:1", "like")
     store.set_feedback(db, "t:1", "dislike")
     assert store.dislikes(db).general is not None  # A fresh dislike starts without one.
+
+
+
+def test_not_applying_hides_the_job_and_moves_nothing_else(tmp_path, monkeypatch):
+    db, p = setup(tmp_path, monkeypatch, [job(1, "React Engineer", location="Lagos"), job(2, "React Developer", location="Lagos"),
+                                          job(3, "Accountant", location="Lagos")])
+    store.reprocess(db)
+    before = {j["id"]: j["rank_value"] for j in Ranker(db, p).recommend()["jobs"]}
+    store.set_feedback(db, "t:1", "dislike")
+    assert store.set_reason(db, "t:1", "pass")
+    after = {j["id"]: j["rank_value"] for j in Ranker(db, p).recommend()["jobs"]}
+    assert "t:1" not in after and after == {k: s for k, s in before.items() if k != "t:1"}
+    assert Ranker(db, p).recommend(status="dislike")["jobs"][0]["reason"] == "pass"

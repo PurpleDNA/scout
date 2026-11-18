@@ -29,7 +29,8 @@ CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
 ACTIVE_DAYS = 3      # A listing its source has stopped returning for this long has closed.
 MAX_AGE_DAYS = 60    # Older postings are hidden from review, even if still listed.
 STAGES = {"in_progress", "rejected", "hired"}  # Where an application went after "applied". None means no reply yet.
-REASONS = {"location", "role", "stack", "seniority"}  # Why a job was not for you. None means no reason given.
+REASONS = {"location", "role", "stack", "seniority", "pass"}  # Why a job was not for you. None means no reason given.
+# "pass": the job fits but you won't apply. It stays hidden and teaches the ranking nothing.
 TRACKED = ("like", "applied")  # Jobs you marked this way stay visible after the listing closes.
 
 
