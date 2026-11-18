@@ -11,6 +11,7 @@ from .sources import SOURCES
 
 ROOT = Path(__file__).resolve().parent.parent
 DB = Path(os.environ.get("SCOUT_DB", ROOT / "data" / "scout.db"))  # Point this at a copy to test without touching your likes.
+PILOT_DB = Path(os.environ.get("SCOUT_PILOT_DB", ROOT / "data" / "pilot.db"))  # Company discovery, shown at /pilot.
 PROFILE = ROOT / "profile.json"
 
 
@@ -88,10 +89,39 @@ def cmd_misreads(_) -> int:
     return 0
 
 
+def cmd_companies(args) -> int:
+    from . import companies
+    db = companies.connect(store.connect(DB))
+    if args.action == "seed":
+        total = 0
+        for register, seeds in companies.fetch_seeds(mfbs=args.mfbs).items():
+            if isinstance(seeds, Exception):
+                print(f"{register:10} FAILED: {seeds!r}"[:140])
+                continue
+            added = companies.save_seeds(db, seeds)
+            total += added
+            print(f"{register:10}{len(seeds):6} listed  {added:5} new  {sum(1 for s in seeds if s.website):5} with a website")
+        print(f"{db.execute('SELECT COUNT(*) FROM companies').fetchone()[0]} companies in total")
+        return 0
+    if args.action == "crawl":
+        rows = companies.due(db, args.all, args.limit, args.industry, args.status)
+        print(f"crawling {len(rows)} companies with {args.workers} workers...", flush=True)
+        tally = companies.crawl(db, rows, args.workers, progress=lambda line: print(line, flush=True))
+        print(dict(tally.most_common()))
+        return 0
+    if args.action == "report":
+        print(companies.report(db, args.industry))
+        return 0
+    for r in companies.listing(db, args.status, args.industry):  # list
+        extra = f"{r['ats']}:{r['ats_slug']}" if r["ats"] else (r["careers_url"] or r["note"] or r["website"] or "")
+        print(f"{(r['status'] or '-'):11} {r['industry'][:22]:22} {r['name'][:40]:40} {extra}")
+    return 0
+
+
 def cmd_serve(args) -> int:
     from .ranker import Ranker
     from .server import serve
-    serve(Ranker(store.connect(DB), PROFILE), args.port)
+    serve(Ranker(store.connect(DB), PROFILE), args.port, PILOT_DB)
     return 0
 
 
@@ -113,6 +143,16 @@ def main() -> None:
     s.add_argument("-n", type=int, default=25)
     s.set_defaults(fn=cmd_audit)
     sub.add_parser("misreads", help="jobs you marked as not open to you").set_defaults(fn=cmd_misreads)
+    s = sub.add_parser("companies", help="find employers' own careers pages (pilot)")
+    s.add_argument("action", choices=["seed", "crawl", "report", "list"])
+    s.add_argument("--mfbs", action="store_true", help="seed: include CBN's ~790 microfinance banks")
+    s.add_argument("--all", action="store_true", help="crawl: recheck companies checked in the last week too")
+    s.add_argument("--limit", type=int, help="crawl: at most this many companies")
+    s.add_argument("--workers", type=int, default=8)
+    s.add_argument("--industry", help='e.g. "Banking"; see `scout companies report`')
+    s.add_argument("--status", nargs="+", choices=["ats", "custom", "linkedin", "email", "no_careers", "js_only", "blocked", "unreachable"],
+                   help="list, or crawl only these (with --all to recheck recent ones)")
+    s.set_defaults(fn=cmd_companies)
     s = sub.add_parser("serve", help="run the web app")
     s.add_argument("--port", type=int, default=8787)
     s.set_defaults(fn=cmd_serve)

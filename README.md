@@ -71,6 +71,32 @@ ranker.py       Filter, apply feedback, diversify →  recommendations
 
 **Score:** title 32%, background 23%, skills 25%, seniority 10%, industry 5%, freshness 5%. Roles in an unrelated profession are damped. "Like", "Applied" and "Not for me" move similar jobs by up to 12 points compared with the rest of the pool, immediately, and clicking again undoes it. After "Not for me", Scout asks why, and the answer decides what moves: *Not open to me* only nudges similar jobs slightly, *Wrong role* sinks similar titles, *Wrong stack* sinks jobs asking for that posting's skills outside your profile, *Too senior* sinks that level and above, and *Not applying* (the job fits, but it's closed, asks too much, or similar) only hides that job and moves nothing else. Without an answer, everything similar sinks. `uv run scout misreads` lists the jobs you marked as not open to you, which is where the eligibility rules need fixing. Further jobs from one company and medium- or low-confidence jobs sink in the list, without changing their displayed score.
 
+## Finding companies' own careers pages (pilot)
+
+Many Nigerian employers never post to a job board. `scout companies` lists companies from public registers, finds each one's careers page and the hiring system behind it, and reports what it found. It doesn't add jobs to the feed yet.
+
+```bash
+uv run scout companies seed               # NGX, CBN, SEC, NCC and Wikidata
+uv run scout companies seed --mfbs        # also CBN's ~790 microfinance banks
+uv run scout companies crawl              # about 35 minutes for ~1,100 companies; rechecks only what's over a week old
+uv run scout companies report             # yield by status and industry, plus ATS slugs ready for scout/sources.py
+uv run scout companies report --industry Banking
+uv run scout companies list --status ats
+```
+
+| Register | What it gives |
+|---|---|
+| NGX company directory | Listed companies with website, sector and subsector |
+| CBN supervision lists | Banks, discount houses, finance companies and mortgage banks. Names only, so the website is guessed from the name and only kept if the page names the company |
+| SEC register of capital market operators | About 900 fund managers, brokers, trustees, solicitors and auditors. The website comes from the operator's own email domain. Webmail addresses are ignored |
+| SEC fintech directory | Fintechs in the SEC's sandbox and categories, such as Cowrywise, Chaka and Busha |
+| NCC individual licences | About 1,300 ISPs, value-added services, MVNOs and infrastructure firms. Licences that have expired are skipped. Names only, so websites are guessed. The ~10,000 class licences (cyber cafés, installers) are left out |
+| Wikidata | Nigerian organisations with an official website and industry. Universities and NGOs are skipped |
+
+To look through the results, run `uv run scout serve` and open http://127.0.0.1:8787/pilot. It lists every company whose openings a person has to go and look at: its own careers page, a hiring system Scout can't read, LinkedIn, or "email us your CV", with the address. Companies on a hiring system Scout already reads are left out, since their jobs come in through `ingest`. Filter by industry and register, star companies, add notes and mark them reviewed. Those marks stay in your browser and never touch either database. The page reads `data/pilot.db` read-only. Set `SCOUT_PILOT_DB` to point it elsewhere. To refresh only some companies, run `scout companies crawl --status email linkedin --all`.
+
+Each company ends up with one status: `ats` (Greenhouse, Lever, Workday, SuccessFactors and so on, with the slug when visible), `custom` (its own careers page), `linkedin`, `email` (the page only says to send a CV), `no_careers`, `js_only` (the site is built in JavaScript, so there's nothing to read without a browser), `blocked` or `unreachable`. Slugs for the hiring systems Scout already reads (Greenhouse, Lever, Ashby, BambooHR, Teamtailor, Workable, Zoho Recruit, Workday, SmartRecruiters, Breezy, Oracle) are printed at the end of the report, ready to paste into the lists in `scout/sources.py`.
+
 ## What was learned from Jobright
 
 From the public site and its public JavaScript bundle, without calling its private APIs:
@@ -101,6 +127,7 @@ From the public site and its public JavaScript bundle, without calling its priva
 - Identifies itself honestly and fetches slowly. Nigerian boards use listing pages that robots.txt permits, and only excerpts are kept.
 - Remote OK's API terms require naming and linking back to it: each job's page does this. Don't remove that if you publish this.
 - **HotNigerianJobs** comes in through its public RSS feed only, keeping titles, links and the feed's excerpts. Its robots.txt allows search use (`search=yes`) and forbids AI training (`ai-train=no`), and blocks named AI crawlers such as ClaudeBot. Scout is your own program, runs under its own name and trains nothing. Its terms prohibit reproducing its content, so don't publish what Scout stores from it. To turn it off, remove it from `SOURCES` in `scout/sources.py`.
+- **Company discovery** fetches robots.txt for every site and skips anything it disallows, and makes at most a handful of requests per company. Requests to different companies run in parallel, but each site's requests are sequential. Many company sites have broken TLS certificates. For these read-only fetches, it retries without verifying the certificate.
 - **jobs.revicemycv.com** comes in through the JSON API its own site uses, which robots.txt allows. Scout reads newest first, 50 per page with 3 seconds between pages, and stops at the first page it already has, so a daily run is usually one request. Its robots.txt asks for 128 seconds between requests; Scout doesn't wait that long.
 - **Indeed is not included.** It answers 403 to an honest client, and Scout doesn't disguise itself to get past that.
 - This is built for personal use. Check each source's terms before making it a public product.

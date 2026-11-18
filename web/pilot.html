@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scout · Company pilot</title>
+<script>
+(()=>{let saved=null;try{saved=localStorage.getItem('scout-theme')}catch{}
+document.documentElement.dataset.theme=saved==='dark'||saved==='light'?saved:matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light'})()
+</script>
+<style>
+:root{color-scheme:light;--bg:#f4f5f7;--panel:#fff;--panel-2:#eceef1;--ink:#16181d;--muted:#5b616e;--line:#dfe2e7;--accent:#1f4fd8;--on-accent:#fff;--accent-soft:#e6ecfd;--warn:#8a5300;--warn-soft:#fbf0dc;--bad:#b3261e;--good:#1d7a46;--shadow:0 1px 2px rgb(22 24 29/.06)}
+:root[data-theme=dark]{color-scheme:dark;--bg:#101216;--panel:#181b20;--panel-2:#22262c;--ink:#eceef1;--muted:#a0a6b1;--line:#2c3037;--accent:#8fadff;--on-accent:#0d1530;--accent-soft:#1d2740;--warn:#eab765;--warn-soft:#33280f;--bad:#f2968f;--good:#7fd1a1;--shadow:none}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+a{color:var(--accent)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+header{background:var(--panel);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:2}
+.bar{display:flex;align-items:center;gap:16px;padding:10px 16px;flex-wrap:wrap}
+h1{font-size:17px;font-weight:700;margin:0;letter-spacing:-.02em}
+h1 small{font-weight:500;color:var(--muted)}
+.back{font-size:13px}
+.seg{display:inline-flex;background:var(--panel-2);border-radius:8px;padding:3px;gap:2px;flex-wrap:wrap}
+.seg button{background:none;border:0;border-radius:6px;padding:5px 12px;color:var(--muted);font-weight:500;white-space:nowrap}
+.seg button:hover{color:var(--ink)}
+.seg button[aria-pressed=true]{background:var(--panel);color:var(--ink);box-shadow:var(--shadow)}
+.seg b{font-weight:500;font-variant-numeric:tabular-nums;margin-left:5px;color:var(--muted)}
+.search{flex:1;min-width:180px;max-width:420px;margin-left:auto}
+.search input{width:100%;padding:6px 10px;background:var(--bg);border:1px solid var(--line);border-radius:8px}
+.filters{display:flex;gap:14px;padding:0 16px 10px;align-items:flex-end;flex-wrap:wrap}
+.field{display:flex;flex-direction:column;gap:2px;font-size:12px;color:var(--muted)}
+.field select{font-size:13px;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:4px 6px;max-width:260px}
+.check{display:flex;gap:6px;align-items:center;font-size:13px;color:var(--muted);cursor:pointer;padding-bottom:5px}
+.btn{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:4px 10px;font-size:13px}
+.btn:hover{border-color:var(--muted)}
+main{max-width:1180px;margin:0 auto;padding:16px}
+.summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:12px}
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+.stat b{display:block;font-size:22px;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.stat span{font-size:12px;color:var(--muted)}
+details.report{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin-bottom:14px}
+details.report summary{cursor:pointer;font-weight:600}
+.cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:24px;margin-top:10px}
+.cols h3{font-size:13px;margin:0 0 6px;color:var(--muted);font-weight:600}
+table{border-collapse:collapse;width:100%;font-size:13px}
+td{padding:3px 6px 3px 0;vertical-align:top}
+td.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.meter{height:6px;background:var(--panel-2);border-radius:3px;overflow:hidden;min-width:80px}
+.meter i{display:block;height:100%;background:var(--accent)}
+.count{font-size:13px;color:var(--muted);margin:4px 0 8px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+#list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;display:grid;grid-template-columns:1fr auto;gap:8px 16px}
+.card.done{opacity:.55}
+.card h2{font-size:15px;margin:0;line-height:1.3;overflow-wrap:anywhere}
+.chips{display:flex;flex-wrap:wrap;gap:4px;margin-top:5px}
+.chip{font-size:12px;padding:0 7px;border-radius:5px;background:var(--panel-2);line-height:20px;white-space:nowrap}
+.chip.good{background:var(--accent-soft);color:var(--accent)}
+.chip.warn{background:var(--warn-soft);color:var(--warn)}
+.links{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:8px;font-size:13px;align-items:center}
+.links a{text-decoration:none;overflow-wrap:anywhere}
+.links a:hover{text-decoration:underline}
+.links .lbl{color:var(--muted)}
+.said{margin-top:6px;font-size:13px;color:var(--muted);font-style:italic}
+.mail{display:inline-flex;gap:4px;align-items:center}
+.copy{background:none;border:1px solid var(--line);border-radius:5px;font-size:11px;padding:0 5px;color:var(--muted)}
+.copy:hover{color:var(--ink)}
+.side{display:flex;gap:6px;align-items:flex-start}
+.icon{min-width:34px;height:34px;padding:0 8px;display:grid;place-items:center;background:none;border:1px solid var(--line);border-radius:8px;color:var(--muted);font-size:15px}
+.icon:hover{color:var(--ink);border-color:var(--muted)}
+.icon[aria-pressed=true].star{background:var(--warn-soft);border-color:var(--warn);color:var(--warn)}
+.icon[aria-pressed=true].tick{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.note{grid-column:1/-1}
+.note textarea{width:100%;min-height:54px;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:6px 8px;resize:vertical}
+.note p{margin:0;font-size:13px;white-space:pre-wrap;background:var(--bg);border-radius:6px;padding:4px 8px}
+.empty,.error{background:var(--panel);border:1px dashed var(--line);border-radius:10px;padding:24px;text-align:center;color:var(--muted)}
+.more{display:block;margin:12px auto}
+.more[hidden]{display:none}
+.acts{display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end}
+.act{background:none;border:1px solid var(--line);border-radius:7px;padding:3px 9px;font-size:12px;color:var(--muted);white-space:nowrap}
+.act:hover{color:var(--ink);border-color:var(--muted)}
+.act[aria-pressed=true]{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.act.skip[aria-pressed=true]{background:var(--panel-2);border-color:var(--muted);color:var(--ink)}
+.side{flex-direction:column;align-items:flex-end}
+.side .row{display:flex;gap:6px}
+.card.skip{opacity:.55}
+.chip.done{background:var(--accent);color:var(--on-accent)}
+.plan{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px;margin-bottom:12px}
+.plan section{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 14px}
+.plan h3{margin:0 0 6px;font-size:13px;font-weight:600}
+.plan h3 span{color:var(--muted);font-weight:500}
+.plan section.act{border-color:var(--accent)}
+.plan section.hold{opacity:.8}
+.plan .what{color:var(--muted);font-size:12px}
+.err{color:var(--bad);font-size:12px}
+</style>
+</head>
+<body>
+<header>
+  <div class="bar">
+    <h1>Scout <small>· company pilot</small></h1>
+    <a class="back" href="/">← Jobs</a>
+    <div class="seg" id="groups" role="group" aria-label="What the careers page does"></div>
+    <label class="search"><input id="q" type="search" placeholder="Search name, website, email, industry, note…" aria-label="Search companies"></label>
+  </div>
+  <div class="filters">
+    <label class="field">Show<select id="action">
+      <option value="open">To do (untouched or watching)</option><option value="none">Untouched</option>
+      <option value="emailed">Emailed</option><option value="applied">Applied</option>
+      <option value="watching">Watching</option><option value="skip">Not for me</option><option value="">Everything</option>
+    </select></label>
+    <label class="field">Industry<select id="industry"></select></label>
+    <label class="field">Register<select id="register"></select></label>
+    <label class="field">Sort<select id="sort">
+      <option value="name">Name</option><option value="industry">Industry</option><option value="acted">Recently acted on</option>
+    </select></label>
+    <label class="check"><input type="checkbox" id="starred"> Starred only</label>
+    <label class="check"><input type="checkbox" id="noGuess"> Hide guessed websites</label>
+  </div>
+</header>
+<main>
+  <div class="plan" id="plan"></div>
+  <details class="report" id="report"><summary>Full run report</summary><div class="cols" id="reportBody"></div></details>
+  <div class="count" id="count"></div>
+  <ul id="list"></ul>
+  <button class="btn more" id="more" hidden>Show more</button>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+function h(tag,attrs,...kids){const el=document.createElement(tag);for(const[k,v]of Object.entries(attrs||{})){if(v==null||v===false)continue;if(k.startsWith('on'))el[k]=v;else if(k==='class')el.className=v;else el.setAttribute(k,v===true?'':v)}for(const kid of kids.flat()){if(kid==null||kid===false)continue;el.append(kid.nodeType?kid:String(kid))}return el}
+const GROUPS=[['careers','Careers page'],['email','Email a CV'],['none','No careers page']];
+const GROUP_OF={custom:'careers',email:'email',no_careers:'none'};
+const ACTION_LABEL={emailed:'Emailed',applied:'Applied',watching:'Watching',skip:'Not for me'};
+// The buttons each kind of company gets: what you can actually do with it.
+const ACTIONS_FOR={careers:['applied','watching','skip'],email:['emailed','watching','skip'],none:['emailed','applied','watching','skip']};
+const PLAN=[['act','Act on now','Work through these by hand.'],['later','Later','Needs a browser to read. Parked until the headless browser stage.'],['hold','On hold','Left alone for now.']];
+const REGISTERS={ngx:'NGX',cbn:'CBN',sec:'SEC',ncc:'NCC',wikidata:'Wikidata'};
+const PAGE=60;
+const state={group:'careers',q:'',action:'open',industry:'',register:'',sort:'name',starred:false,noGuess:false,shown:PAGE};
+let data=null;
+const safe=u=>/^https?:\/\//i.test(u||'')?u:null;
+function hostPath(u){try{const x=new URL(u);return(x.host.replace(/^www\./,'')+x.pathname).replace(/\/$/,'')}catch{return u}}
+const fmt=n=>n.toLocaleString();
+const day=iso=>iso?new Date(iso).toLocaleDateString(undefined,{day:'numeric',month:'short'}):'';
+function ext(href,text){href=safe(href);return href?h('a',{href,target:'_blank',rel:'noopener noreferrer'},text,' ↗'):null}
+async function copy(text,btn){try{await navigator.clipboard.writeText(text);const was=btn.textContent;btn.textContent='copied';setTimeout(()=>btn.textContent=was,1200)}catch{prompt('Copy:',text)}}
+
+// Actions live in data/pilot.db (company_actions), so they survive recrawls and other browsers.
+async function save(c,patch,errEl){
+  const next={key:c.key,action:c.action,star:c.star,note:c.note,...patch};
+  const r=await fetch('/api/pilot/action',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(next)}).catch(()=>null);
+  if(!r||!r.ok){if(errEl)errEl.textContent='Not saved. Is scout serve still running?';return}
+  if(next.action!==c.action)c.acted_at=next.action?new Date().toISOString():null;
+  Object.assign(c,{action:next.action,star:next.star,note:next.note});render()}
+
+function matches(c,skip){
+  if(skip!=='group'&&c.group!==state.group)return false;
+  if(skip!=='action'&&state.action){if(state.action==='open'?c.action&&c.action!=='watching':state.action==='none'?c.action:c.action!==state.action)return false}
+  if(state.industry&&c.industry!==state.industry)return false;
+  if(state.register&&!c.registers.includes(state.register))return false;
+  if(state.noGuess&&c.website_guessed)return false;
+  if(state.starred&&!c.star)return false;
+  if(state.q){const hay=[c.name,c.website,c.careers_url,c.industry,c.industry_raw,c.said,c.note,...c.emails].join(' ').toLowerCase();
+    if(!state.q.toLowerCase().split(/\s+/).every(t=>hay.includes(t)))return false}
+  return true}
+
+function renderPlan(){
+  const s=data.statuses;
+  const sections=PLAN.map(([stage,title,blurb])=>{
+    const statuses=Object.keys(data.meanings).filter(k=>data.plan[k]===stage&&s[k]);
+    const total=statuses.reduce((n,k)=>n+s[k],0);
+    const rows=statuses.map(k=>{
+      const g=GROUP_OF[k];
+      let progress='';
+      if(g){const all=data.companies.filter(c=>c.group===g),done=all.filter(c=>c.action&&c.action!=='watching').length;progress=`${fmt(done)} done`}
+      if(k==='ats')progress=`${fmt(data.readable_left_out)} read by Scout`;
+      const label=g?h('a',{href:'#',onclick(e){e.preventDefault();state.group=g;state.shown=PAGE;render()}},k):h('b',{},k);
+      return h('tr',{},h('td',{class:'n'},fmt(s[k])),h('td',{},label,progress&&h('span',{class:'chip',style:'margin-left:6px'},progress),h('div',{class:'what'},data.meanings[k])))});
+    return h('section',{class:stage},h('h3',{},title,' ',h('span',{},`· ${fmt(total)}`)),h('p',{class:'said',style:'margin:0 0 6px'},blurb),h('table',{},...rows))});
+  $('plan').replaceChildren(...sections);
+}
+
+function renderReport(){
+  const s=data.statuses,max=Math.max(...Object.values(s));
+  const meter=pct=>h('div',{class:'meter'},h('i',{style:`width:${pct}%`}));
+  const byStatus=Object.entries(data.meanings).map(([k,m])=>{const n=s[k]||0;
+    return h('tr',{},h('td',{class:'n'},fmt(n)),h('td',{class:'n'},(n/data.crawled*100).toFixed(1)+'%'),h('td',{},h('b',{},k),' ',m),h('td',{},meter(n/max*100)))});
+  const byRegister=data.registers.map(r=>{const pct=r.found/r.crawled*100;
+    return h('tr',{},h('td',{},REGISTERS[r.register]||r.register),h('td',{class:'n'},`${fmt(r.found)} / ${fmt(r.crawled)}`),h('td',{class:'n'},pct.toFixed(0)+'%'),h('td',{style:'width:45%'},meter(pct)))});
+  const when=data.last_checked?new Date(data.last_checked).toLocaleString():'never';
+  $('reportBody').replaceChildren(
+    h('div',{},h('h3',{},`All ${fmt(data.crawled)} crawled companies, by result`),h('table',{},...byStatus)),
+    h('div',{},h('h3',{},'By register: careers page, hiring system or email found'),h('table',{},...byRegister)),
+    h('p',{class:'said',style:'grid-column:1/-1'},`Last checked ${when}. Refresh with `,h('code',{},'scout companies crawl'),'.'));
+}
+
+function renderFilters(){
+  const pool=data.companies.filter(c=>matches(c,'group'));
+  $('groups').replaceChildren(...GROUPS.map(([v,n])=>h('button',{'aria-pressed':String(state.group===v),onclick(){state.group=v;state.shown=PAGE;render()}},n,h('b',{},fmt(pool.filter(c=>c.group===v).length)))));
+  const opts=(el,counts,all,label=x=>x)=>{el.replaceChildren(h('option',{value:''},all),...Object.entries(counts).sort((a,b)=>b[1]-a[1]).map(([k,n])=>h('option',{value:k},`${label(k)} (${n})`)));el.value=el.id==='industry'?state.industry:state.register};
+  const ind={},reg={};for(const c of data.companies){if(c.group!==state.group)continue;ind[c.industry]=(ind[c.industry]||0)+1;for(const r of c.registers)reg[r]=(reg[r]||0)+1}
+  opts($('industry'),ind,'All industries');opts($('register'),reg,'All registers',k=>REGISTERS[k]||k);
+}
+
+function card(c){
+  const err=h('div',{class:'err'});
+  const noteBox=h('div',{class:'note'});
+  function showNote(editing){
+    if(editing){const ta=h('textarea',{placeholder:'What did you find? Roles, who to contact, when to check again…'});ta.value=c.note||'';
+      ta.onblur=()=>{const v=ta.value.trim();if(v!==(c.note||''))save(c,{note:v},err);else showNote(false)};noteBox.replaceChildren(ta,err);ta.focus()}
+    else noteBox.replaceChildren(c.note?h('p',{},c.note):'',err)}
+  showNote(false);
+  const links=h('div',{class:'links'},
+    c.careers_url&&h('span',{},h('span',{class:'lbl'},'Careers: '),ext(c.careers_url,hostPath(c.careers_url))),
+    c.website&&h('span',{},h('span',{class:'lbl'},'Site: '),ext(c.website,hostPath(c.website))),
+    ...c.emails.map(e=>h('span',{class:'mail'},h('a',{href:'mailto:'+e},e),h('button',{class:'copy',title:'Copy address',onclick(ev){copy(e,ev.currentTarget)}},'copy'))));
+  const acts=ACTIONS_FOR[c.group].map(a=>h('button',{class:'act'+(a==='skip'?' skip':''),'aria-pressed':String(c.action===a),
+    onclick(){save(c,{action:c.action===a?null:a},err)}},ACTION_LABEL[a]));
+  return h('li',{class:'card'+(c.action==='skip'?' skip':'')},
+    h('div',{},
+      h('h2',{},c.name),
+      h('div',{class:'chips'},
+        c.action&&h('span',{class:'chip done',title:c.acted_at||''},ACTION_LABEL[c.action]+(c.acted_at?' · '+day(c.acted_at):'')),
+        h('span',{class:'chip',title:c.industry_raw},c.industry),
+        ...c.registers.map(r=>h('span',{class:'chip'},REGISTERS[r]||r)),
+        c.website_guessed&&h('span',{class:'chip warn',title:'The register gave no website, so it was guessed from the name and kept because the page names the company'},'guessed website')),
+      links,
+      c.said&&h('div',{class:'said'},'“',c.said,'”')),
+    h('div',{class:'side'},
+      h('div',{class:'row'},
+        h('button',{class:'icon star','aria-pressed':String(c.star),title:'Star',onclick(){save(c,{star:!c.star},err)}},'★'),
+        h('button',{class:'icon',title:'Add a note',onclick(){showNote(true)}},'✎')),
+      h('div',{class:'acts'},...acts)),
+    noteBox);
+}
+
+function render(){
+  renderFilters();renderPlan();renderReport();
+  let rows=data.companies.filter(c=>matches(c));
+  if(state.sort==='industry')rows.sort((a,b)=>a.industry.localeCompare(b.industry)||a.name.localeCompare(b.name));
+  else if(state.sort==='acted')rows.sort((a,b)=>(b.acted_at||'').localeCompare(a.acted_at||''));
+  const emails=[...new Set(rows.flatMap(c=>c.emails.slice(0,1)))];
+  const copyAll=emails.length?h('button',{class:'btn',title:'The first (hiring) address of each company listed',onclick(ev){copy(emails.join(', '),ev.currentTarget)}},`Copy ${emails.length} addresses`):null;
+  const hint=state.group==='none'?h('span',{},'No careers page was found. Check the site’s contact or about page, or email them.'):null;
+  $('count').replaceChildren(...[h('span',{},`${fmt(rows.length)} compan${rows.length===1?'y':'ies'}`),copyAll,hint].filter(Boolean));
+  $('list').replaceChildren(...(rows.length?rows.slice(0,state.shown).map(card):[h('li',{class:'empty'},'Nothing matches these filters.')]));
+  $('more').hidden=rows.length<=state.shown;$('more').textContent=`Show more (${fmt(rows.length-state.shown)} left)`;
+}
+
+// Stars and notes used to live in this browser only. Move them to the database once, then forget them here.
+async function migrate(){
+  let old={};try{old=JSON.parse(localStorage.getItem('scout-pilot')||'{}')}catch{}
+  const byKey=Object.fromEntries(data.companies.map(c=>[c.key,c]));
+  let all=true;
+  for(const[k,m]of Object.entries(old)){const c=byKey[k];if(!c)continue;
+    const patch={star:c.star||!!m.star,note:c.note||m.note||'',action:c.action||(m.done?'skip':null)};
+    const r=await fetch('/api/pilot/action',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:k,...patch})}).catch(()=>null);
+    if(r&&r.ok)Object.assign(c,patch);else all=false}
+  if(all)try{localStorage.removeItem('scout-pilot')}catch{}
+}
+
+$('more').onclick=()=>{state.shown+=PAGE;render()};
+let t;$('q').oninput=e=>{clearTimeout(t);t=setTimeout(()=>{state.q=e.target.value.trim();state.shown=PAGE;render()},150)};
+for(const id of ['action','industry','register','sort'])$(id).onchange=e=>{state[id]=e.target.value;state.shown=PAGE;render()};
+for(const id of ['starred','noGuess'])$(id).onchange=e=>{state[id]=e.target.checked;state.shown=PAGE;render()};
+
+fetch('/api/pilot').then(async r=>{const body=await r.json();if(!r.ok)throw new Error(body.error||r.status);data=body;await migrate();render()})
+  .catch(e=>{$('list').replaceChildren(h('li',{class:'error'},'Couldn’t load the pilot: ',e.message))});
+</script>
+</body>
+</html>

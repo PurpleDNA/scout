@@ -2,19 +2,49 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from threading import Lock
 from urllib.parse import parse_qs, urlparse
 
-from . import programmes, store
+from . import companies, programmes, store
 from .ranker import Ranker
 
 WEB = Path(__file__).resolve().parent.parent / "web"
 ACTIONS = {"like", "dislike", "applied", None}
 
 
-def serve(ranker: Ranker, port: int) -> None:
+def pilot_data(path: Path) -> dict | None:
+    """The company-discovery pilot, opened read-only so viewing it can never change it."""
+    if not path.exists():
+        return None
+    db = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    db.row_factory = sqlite3.Row
+    try:
+        return companies.pilot_view(db)
+    except sqlite3.OperationalError:  # No companies table: the pilot was never seeded there.
+        return None
+    finally:
+        db.close()
+
+
+def pilot_action(path: Path, body: dict) -> int:
+    """Save what you did about one pilot company. Only the company_actions table is ever written."""
+    key, action, star, note = body.get("key"), body.get("action"), body.get("star", False), body.get("note", "")
+    if not isinstance(key, str) or not isinstance(star, bool) or not isinstance(note, str) or len(note) > 5000 \
+            or (action is not None and action not in companies.ACTIONS):
+        return 400
+    if not path.exists():
+        return 404
+    db = sqlite3.connect(path)
+    try:
+        return 200 if companies.set_action(db, key, action, star, note) else 404
+    finally:
+        db.close()
+
+
+def serve(ranker: Ranker, port: int, pilot_db: Path | None = None) -> None:
     lock = Lock()
 
     class Handler(BaseHTTPRequestHandler):
@@ -31,6 +61,8 @@ def serve(ranker: Ranker, port: int) -> None:
             url = urlparse(self.path)
             if url.path == "/":
                 return self._send(200, (WEB / "index.html").read_bytes(), "text/html; charset=utf-8")
+            if url.path == "/pilot":
+                return self._send(200, (WEB / "pilot.html").read_bytes(), "text/html; charset=utf-8")
             if url.path == "/programmes":
                 return self._send(200, (WEB / "programmes.html").read_bytes(), "text/html; charset=utf-8")
             if url.path == "/api/programmes":
@@ -39,6 +71,12 @@ def serve(ranker: Ranker, port: int) -> None:
                     return self._send(400, b'{"error":"bad view"}')
                 with lock:
                     data = {"programmes": programmes.listing(ranker.db, view), "counts": programmes.counts(ranker.db)}
+                return self._send(200, json.dumps(data).encode())
+            if url.path == "/api/pilot":
+                data = pilot_data(pilot_db) if pilot_db else None
+                if data is None:
+                    return self._send(404, json.dumps({"error": f"No pilot data at {pilot_db}. Run `scout companies seed` and "
+                                                                "`crawl` with SCOUT_DB pointing there."}).encode())
                 return self._send(200, json.dumps(data).encode())
             if url.path == "/api/jobs":
                 q = {k: v[0] for k, v in parse_qs(url.query).items()}
@@ -57,11 +95,17 @@ def serve(ranker: Ranker, port: int) -> None:
 
         def do_POST(self):
             # Requiring JSON stops other websites posting here from your browser with a plain form.
-            if self.path not in ("/api/feedback", "/api/stage", "/api/reason", "/api/programme") \
+            if self.path not in ("/api/feedback", "/api/stage", "/api/reason", "/api/programme", "/api/pilot/action") \
                     or self.headers.get("Content-Type") != "application/json":
                 return self._send(404, b'{"error":"not found"}')
             try:
                 body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)))
+                if self.path == "/api/pilot/action":
+                    if not pilot_db or not isinstance(body, dict):
+                        return self._send(400, b'{"error":"bad request"}')
+                    with lock:
+                        code = pilot_action(pilot_db, body)
+                    return self._send(code, b'{"ok":true}' if code == 200 else b'{"error":"could not save"}')
                 job_id = body["job_id"]
             except (ValueError, KeyError, TypeError):
                 return self._send(400, b'{"error":"bad request"}')
