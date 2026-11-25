@@ -109,7 +109,7 @@ td.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
   <div class="filters">
     <label class="field">Show<select id="action">
       <option value="open">To do (untouched or watching)</option><option value="none">Untouched</option>
-      <option value="emailed">Emailed</option><option value="applied">Applied</option>
+      <option value="draft">Draft waiting</option><option value="emailed">Emailed</option><option value="applied">Applied</option>
       <option value="watching">Watching</option><option value="skip">Not for me</option><option value="">Everything</option>
     </select></label>
     <label class="field">Industry<select id="industry"></select></label>
@@ -156,9 +156,17 @@ async function save(c,patch,errEl){
   if(next.action!==c.action)c.acted_at=next.action?new Date().toISOString():null;
   Object.assign(c,{action:next.action,star:next.star,note:next.note});render()}
 
+async function syncSent(btn){
+  btn.disabled=true;btn.textContent='Checking…';
+  const r=await fetch('/api/pilot/sync',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}).catch(()=>null);
+  const body=r?await r.json().catch(()=>({})):{};
+  if(!r||!r.ok){btn.disabled=false;btn.textContent=body.error||'Couldn’t reach Outlook';return}
+  data=await(await fetch('/api/pilot')).json();render();
+  document.querySelector('#count .btn[title^="Look"]').textContent=body.found?`${body.found} newly marked Emailed`:'Nothing new sent'}
+
 function matches(c,skip){
   if(skip!=='group'&&c.group!==state.group)return false;
-  if(skip!=='action'&&state.action){if(state.action==='open'?c.action&&c.action!=='watching':state.action==='none'?c.action:c.action!==state.action)return false}
+  if(skip!=='action'&&state.action){if(state.action==='open'?c.action&&c.action!=='watching':state.action==='draft'?!(c.mail&&!c.mail.sent_at&&c.action!=='emailed'):state.action==='none'?c.action:c.action!==state.action)return false}
   if(state.industry&&c.industry!==state.industry)return false;
   if(state.register&&!c.registers.includes(state.register))return false;
   if(state.noGuess&&c.website_guessed)return false;
@@ -224,6 +232,8 @@ function card(c){
       h('h2',{},c.name),
       h('div',{class:'chips'},
         c.action&&h('span',{class:'chip done',title:c.acted_at||''},ACTION_LABEL[c.action]+(c.acted_at?' · '+day(c.acted_at):'')),
+        c.mail&&!c.mail.sent_at&&c.action!=='emailed'&&h('span',{class:'chip warn',title:'Saved in Outlook Drafts, not sent yet: '+c.mail.subject},'Draft · '+day(c.mail.drafted_at)),
+        c.mail&&c.mail.sent_at&&h('span',{class:'chip done',title:c.mail.subject},'Sent to '+c.mail.to+' · '+day(c.mail.sent_at)),
         h('span',{class:'chip',title:c.industry_raw},c.industry),
         ...c.registers.map(r=>h('span',{class:'chip'},REGISTERS[r]||r)),
         c.website_guessed&&h('span',{class:'chip warn',title:'The register gave no website, so it was guessed from the name and kept because the page names the company'},'guessed website')),
@@ -245,7 +255,8 @@ function render(){
   const emails=[...new Set(rows.flatMap(c=>c.emails.slice(0,1)))];
   const copyAll=emails.length?h('button',{class:'btn',title:'The first (hiring) address of each company listed',onclick(ev){copy(emails.join(', '),ev.currentTarget)}},`Copy ${emails.length} addresses`):null;
   const hint=state.group==='none'?h('span',{},'No careers page was found. Check the site’s contact or about page, or email them.'):null;
-  $('count').replaceChildren(...[h('span',{},`${fmt(rows.length)} compan${rows.length===1?'y':'ies'}`),copyAll,hint].filter(Boolean));
+  const check=state.group==='email'?h('button',{class:'btn',title:'Look through Outlook Sent Items and mark what went out as Emailed',onclick(ev){syncSent(ev.currentTarget)}},'Check Outlook for sent'):null;
+  $('count').replaceChildren(...[h('span',{},`${fmt(rows.length)} compan${rows.length===1?'y':'ies'}`),copyAll,check,hint].filter(Boolean));
   $('list').replaceChildren(...(rows.length?rows.slice(0,state.shown).map(card):[h('li',{class:'empty'},'Nothing matches these filters.')]));
   $('more').hidden=rows.length<=state.shown;$('more').textContent=`Show more (${fmt(rows.length-state.shown)} left)`;
 }

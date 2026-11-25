@@ -879,8 +879,8 @@ CREATE TABLE IF NOT EXISTS company_actions (
 """
 
 
-def set_action(db: sqlite3.Connection, key: str, action: str | None, star: bool, note: str) -> bool:
-    """Record what you did about a company. False if there is no such company."""
+def set_action(db: sqlite3.Connection, key: str, action: str | None, star: bool, note: str, when: str | None = None) -> bool:
+    """Record what you did about a company, now or at `when`. False if there is no such company."""
     if action is not None and action not in ACTIONS:
         raise ValueError(f"unknown action {action!r}")
     if not db.execute("SELECT 1 FROM companies WHERE key = ?", (key,)).fetchone():
@@ -892,7 +892,8 @@ def set_action(db: sqlite3.Connection, key: str, action: str | None, star: bool,
     else:
         old = db.execute("SELECT action, updated_at FROM company_actions WHERE key = ?", (key,)).fetchone()
         # The date says when the action happened, so a later note or star doesn't move it.
-        when = old[1] if old and old[0] == action and action else datetime.now(timezone.utc).isoformat(timespec="seconds")
+        if when is None:
+            when = old[1] if old and old[0] == action and action else datetime.now(timezone.utc).isoformat(timespec="seconds")
         db.execute("INSERT OR REPLACE INTO company_actions (key, action, star, note, updated_at) VALUES (?,?,?,?,?)",
                    (key, action, int(star), note, when))
     db.commit()
@@ -906,9 +907,11 @@ def _actions(db: sqlite3.Connection) -> dict[str, sqlite3.Row]:
 
 
 def pilot_view(db: sqlite3.Connection) -> dict:
+    from . import outreach  # It imports this module.
     rows = db.execute("SELECT * FROM companies").fetchall()
     checked = [r for r in rows if r["status"]]
     acts = _actions(db)
+    mails = outreach.rows(db)
     shown, left_out = [], 0
     for r in checked:
         if r["status"] == "ats" and r["ats"] in READABLE_ATS:
@@ -919,14 +922,15 @@ def pilot_view(db: sqlite3.Connection) -> dict:
         note = r["note"] or ""
         emails = hiring_first(_EMAIL_ADDR.findall(note)) if group == "email" else []
         said = note.rsplit(" · ", 1)[-1] if group == "email" and not _EMAIL_ADDR.fullmatch(note.rsplit(" · ", 1)[-1]) else ""
-        a = acts.get(r["key"])
+        a, m = acts.get(r["key"]), mails.get(r["key"])
         shown.append({
             "key": r["key"], "name": r["name"], "group": group, "industry": r["industry"] or "Other",
             "industry_raw": r["industry_raw"] or "", "registers": json.loads(r["sources"] or "[]"),
             "website": r["website"], "website_guessed": bool(r["website_guessed"]), "careers_url": r["careers_url"],
             "emails": emails, "said": said, "checked_at": r["checked_at"],
             "action": a["action"] if a else None, "star": bool(a and a["star"]), "note": a["note"] if a else "",
-            "acted_at": a["updated_at"] if a and a["action"] else None})
+            "acted_at": a["updated_at"] if a and a["action"] else None,
+            "mail": {"to": m["address"], "subject": m["subject"], "drafted_at": m["drafted_at"], "sent_at": m["sent_at"]} if m else None})
     registers = Counter(s for r in checked for s in json.loads(r["sources"] or "[]"))
     found = Counter(s for r in checked if r["status"] in FOUND for s in json.loads(r["sources"] or "[]"))
     statuses = Counter(r["status"] for r in checked)

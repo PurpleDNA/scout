@@ -8,7 +8,7 @@ from pathlib import Path
 from threading import Lock
 from urllib.parse import parse_qs, urlparse
 
-from . import companies, programmes, store
+from . import companies, outreach, programmes, store
 from .ranker import Ranker
 
 WEB = Path(__file__).resolve().parent.parent / "web"
@@ -40,6 +40,21 @@ def pilot_action(path: Path, body: dict) -> int:
     db = sqlite3.connect(path)
     try:
         return 200 if companies.set_action(db, key, action, star, note) else 404
+    finally:
+        db.close()
+
+
+def pilot_sync(path: Path) -> tuple[int, dict]:
+    """Ask Outlook what has been sent and mark it Emailed."""
+    config = path.parent / "outreach" / "config.json"
+    if not path.exists() or not config.exists():
+        return 404, {"error": "Outreach isn't set up."}
+    db = sqlite3.connect(path)
+    db.row_factory = sqlite3.Row
+    try:
+        return 200, {"found": len(outreach.sync(db, json.loads(config.read_text())["account"]))}
+    except outreach.OutlookError as e:
+        return 502, {"error": str(e)}
     finally:
         db.close()
 
@@ -97,7 +112,7 @@ def serve(ranker: Ranker, port: int, pilot_db: Path | None = None) -> None:
 
         def do_POST(self):
             # Requiring JSON stops other websites posting here from your browser with a plain form.
-            if self.path not in ("/api/feedback", "/api/stage", "/api/reason", "/api/programme", "/api/pilot/action") \
+            if self.path not in ("/api/feedback", "/api/stage", "/api/reason", "/api/programme", "/api/pilot/action", "/api/pilot/sync") \
                     or self.headers.get("Content-Type") != "application/json":
                 return self._send(404, b'{"error":"not found"}')
             try:
@@ -108,6 +123,11 @@ def serve(ranker: Ranker, port: int, pilot_db: Path | None = None) -> None:
                     with lock:
                         code = pilot_action(pilot_db, body)
                     return self._send(code, b'{"ok":true}' if code == 200 else b'{"error":"could not save"}')
+                if self.path == "/api/pilot/sync":
+                    if not pilot_db:
+                        return self._send(404, b'{"error":"not found"}')
+                    code, data = pilot_sync(pilot_db)  # Not under the lock: Outlook takes seconds.
+                    return self._send(code, json.dumps(data).encode())
                 job_id = body["job_id"]
             except (ValueError, KeyError, TypeError):
                 return self._send(400, b'{"error":"bad request"}')

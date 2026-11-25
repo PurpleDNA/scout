@@ -118,6 +118,46 @@ def cmd_companies(args) -> int:
     return 0
 
 
+def cmd_outreach(args) -> int:
+    import json
+    import sqlite3
+    from . import outreach
+    folder = PILOT_DB.parent / "outreach"
+    emails, config = (json.loads((folder / f).read_text()) for f in ("emails.json", "config.json"))
+    db = sqlite3.connect(PILOT_DB)
+    db.row_factory = sqlite3.Row
+    try:
+        if args.action == "login":
+            for event in outreach.outlook("login", timeout=900):
+                if event["type"] == "account":
+                    print(f"Signed in as {event['account']}")
+                    if event["account"].lower() != config["account"].lower():
+                        print(f"Expected {config['account']}: drafts won't be saved to this one.")
+        elif args.action == "preview":
+            for key in outreach.queue(db, emails)[:args.n]:
+                e = emails[key]
+                print(f"=== {key}\nTo: {e['to']}\nSubject: {e['subject']}\nCV: {outreach.cv_for(e, config).name}\n\n{e['body']}\n")
+        elif args.action == "draft":
+            found = outreach.sync(db, config["account"])  # Never draft to someone you have already emailed by hand.
+            if found:
+                print(f"{len(found)} already sent, marked Emailed")
+            print(f"{outreach.draft(db, emails, config, args.n)} drafts saved in Outlook. Read them, then send.")
+        elif args.action == "sync":
+            found = outreach.sync(db, config["account"])
+            print(f"{len(found)} newly marked Emailed" + "".join(f"\n  {k}" for k in found))
+        else:
+            log = outreach.rows(db).values()
+            sent = sum(1 for r in log if r["sent_at"])
+            print(f"{len(outreach.queue(db, emails))} to draft, {len(log) - sent} waiting in Drafts, {sent} sent")
+            for key, e in emails.items():
+                if "hold" in e:
+                    print(f"  held  {key[:36]:36} {e['hold']}")
+    except outreach.OutlookError as e:
+        print(e)
+        return 1
+    return 0
+
+
 def cmd_serve(args) -> int:
     from .ranker import Ranker
     from .server import serve
@@ -153,6 +193,10 @@ def main() -> None:
     s.add_argument("--status", nargs="+", choices=["ats", "custom", "linkedin", "email", "no_careers", "js_only", "blocked", "unreachable"],
                    help="list, or crawl only these (with --all to recheck recent ones)")
     s.set_defaults(fn=cmd_companies)
+    s = sub.add_parser("outreach", help="cold emails to companies that ask for CVs by email")
+    s.add_argument("action", choices=["status", "login", "preview", "draft", "sync"])
+    s.add_argument("-n", type=int, default=10, help="preview or draft this many (default 10)")
+    s.set_defaults(fn=cmd_outreach)
     s = sub.add_parser("serve", help="run the web app")
     s.add_argument("--port", type=int, default=8787)
     s.set_defaults(fn=cmd_serve)

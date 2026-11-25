@@ -93,9 +93,25 @@ uv run scout companies list --status ats
 | NCC individual licences | About 1,300 ISPs, value-added services, MVNOs and infrastructure firms. Licences that have expired are skipped. Names only, so websites are guessed. The ~10,000 class licences (cyber cafés, installers) are left out |
 | Wikidata | Nigerian organisations with an official website and industry. Universities and NGOs are skipped |
 
-To look through the results, run `uv run scout serve` and open http://127.0.0.1:8787/pilot. It lists every company whose openings a person has to go and look at: its own careers page, a hiring system Scout can't read, LinkedIn, or "email us your CV", with the address. Companies on a hiring system Scout already reads are left out, since their jobs come in through `ingest`. Filter by industry and register, star companies, add notes and mark them reviewed. Those marks stay in your browser and never touch either database. The page reads `data/pilot.db` read-only. Set `SCOUT_PILOT_DB` to point it elsewhere. To refresh only some companies, run `scout companies crawl --status email linkedin --all`.
+To look through the results, run `uv run scout serve` and open http://127.0.0.1:8787/pilot. It lists every company whose openings a person has to go and look at: its own careers page, a hiring system Scout can't read, LinkedIn, or "email us your CV", with the address. Companies on a hiring system Scout already reads are left out, since their jobs come in through `ingest`. Filter by industry and register, star companies, add notes and mark them reviewed. Those marks are saved in `data/pilot.db`, in a table of their own that seeding and recrawling never touch. Set `SCOUT_PILOT_DB` to point it elsewhere. To refresh only some companies, run `scout companies crawl --status email linkedin --all`.
 
 Each company ends up with one status: `ats` (Greenhouse, Lever, Workday, SuccessFactors and so on, with the slug when visible), `custom` (its own careers page), `linkedin`, `email` (the page only says to send a CV), `no_careers`, `js_only` (the site is built in JavaScript, so there's nothing to read without a browser), `blocked` or `unreachable`. Slugs for the hiring systems Scout already reads (Greenhouse, Lever, Ashby, BambooHR, Teamtailor, Workable, Zoho Recruit, Workday, SmartRecruiters, Breezy, Oracle) are printed at the end of the report, ready to paste into the lists in `scout/sources.py`.
+
+## Emailing the companies that ask for CVs
+
+Scout can save cold emails as drafts in an Outlook.com account, with your CV attached, and mark a company as Emailed once you send its draft. It can't send anything: it only asks Microsoft for `Mail.ReadWrite`, not `Mail.Send`.
+
+```bash
+uv run scout outreach login                    # once: open the link it prints and enter the code
+uv run scout outreach preview -n 5             # read the next texts
+uv run scout outreach draft -n 10              # save the next 10 as drafts
+uv run scout outreach sync                     # mark what you sent. Also the "Check Outlook for sent" button on /pilot
+uv run scout outreach status                   # what's left, waiting and sent, and who is held back and why
+```
+
+The texts are in `data/outreach/emails.json` (`to`, `subject`, `body` and which `cv`, or `hold` with a reason), and the account, signature and CV paths in `data/outreach/config.json`. CVs are read when drafting, so editing a PDF in place is enough. Both stay out of git. A company is drafted once. Anyone you've already emailed, applied to or marked "Not for me" is skipped. `sync` looks back a year through Sent Items, so it finds emails you sent by hand to a hiring address too. It only counts a general address such as info@ if Scout drafted to it.
+
+It runs through Windows PowerShell with Microsoft's `Microsoft.Graph.Authentication` module, unpacked into `%LOCALAPPDATA%\Scout\modules` from the PowerShell Gallery. No Azure account is needed. Classic Outlook 2019 can't connect to Outlook.com accounts, so it isn't used.
 
 ## What was learned from Jobright
 
