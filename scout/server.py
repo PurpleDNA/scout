@@ -22,7 +22,9 @@ def pilot_data(path: Path) -> dict | None:
     db = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
     db.row_factory = sqlite3.Row
     try:
-        return companies.pilot_view(db)
+        view = companies.pilot_view(db)
+        view["outreach"] = (path.parent / "outreach" / "config.json").exists()  # Cold-email drafting is set up here.
+        return view
     except sqlite3.OperationalError:  # No companies table: the pilot was never seeded there.
         return None
     finally:
@@ -52,7 +54,7 @@ def pilot_sync(path: Path) -> tuple[int, dict]:
     db = sqlite3.connect(path)
     db.row_factory = sqlite3.Row
     try:
-        return 200, {"found": len(outreach.sync(db, json.loads(config.read_text())["account"]))}
+        return 200, {"found": len(outreach.sync(db, json.loads(config.read_text(encoding="utf-8"))["account"]))}
     except outreach.OutlookError as e:
         return 502, {"error": str(e)}
     finally:

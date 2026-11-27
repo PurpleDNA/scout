@@ -200,7 +200,11 @@ const safeUrl=u=>{try{const p=new URL(u);return['http:','https:'].includes(p.pro
 const ago=iso=>{if(!iso)return'';const d=Math.floor((Date.now()-new Date(iso))/864e5);return d<=0?'today':d===1?'yesterday':d<30?d+' days ago':Math.floor(d/30)+' mo ago'};
 const tone=j=>j.label.split(' ')[0].toLowerCase();
 const current=()=>state.jobs.find(j=>j.id===state.selected);
-function whereChip(j){const place=SCOPE[j.scope]||j.scope;const cls=j.confidence==='high'?'good':'warn';const text=j.work_model==='remote'?'Remote, '+place:j.work_model==='hybrid'?'Hybrid, Lagos':'Lagos';return h('span',{class:'chip '+cls},text)}
+// Remote jobs name who they're open to. Office jobs name the place: your home city, or for a city you'd move to, the listing's own words.
+function whereChip(j){const cls=j.confidence==='high'?'good':'warn';
+  if(j.work_model==='remote')return h('span',{class:'chip '+cls},'Remote, '+(SCOPE[j.scope]||j.scope.charAt(0).toUpperCase()+j.scope.slice(1)));
+  const place=j.scope==='nigeria'?(j.location||'Nigeria').slice(0,40):SCOPE[j.scope]||j.scope.charAt(0).toUpperCase()+j.scope.slice(1);
+  return h('span',{class:'chip '+cls},j.work_model==='hybrid'?'Hybrid, '+place:place)}
 function renderSegs(){
   const total=(state.counts.global_remote||0)+(state.counts.nigeria||0);
   $('lanes').replaceChildren(...[['','All',total],['global_remote','Global remote',state.counts.global_remote||0],['nigeria','Nigeria',state.counts.nigeria||0]].map(([v,n,c])=>h('button',{'aria-pressed':String(state.lane===v),onclick(){state.lane=v;state.selected=null;load()}},n,h('b',{},String(c)))));
@@ -284,7 +288,7 @@ function renderDetail(){const j=current(),d=$('detail');if(!j){d.replaceChildren
   const notes=[];
   if(j.closed||j.stale)notes.push(h('div',{class:'note warn'},svg('warn'),h('div',{},h('strong',{},j.closed?'Listing closed. ':'Over 60 days old. '),j.closed?'Its board has stopped listing it. It stays here because you marked it.':'It may have been filled. It stays here because you marked it.')));
   notes.push(h('div',{class:'note'+(j.confidence==='high'?'':' warn')},svg(j.confidence==='high'?'ok':'warn'),h('div',{},h('strong',{},j.confidence==='high'?'Open to you. ':j.confidence==='medium'?'Probably open to you. ':'Check this first. '),j.evidence)));
-  if(j.flags.includes('us_hours'))notes.push(h('div',{class:'note warn'},svg('warn'),h('div',{},h('strong',{},'US hours. '),'The posting mentions US time zones, which may mean evening work from Lagos.')));
+  if(j.flags.includes('us_hours'))notes.push(h('div',{class:'note warn'},svg('warn'),h('div',{},h('strong',{},'US hours. '),'The posting mentions US time zones, which may mean evening work in Nigeria.')));
   if(j.years_required&&j.years_required>3)notes.push(h('div',{class:'note warn'},svg('warn'),h('div',{},h('strong',{},'Experience. '),`Asks for ${j.years_required}+ years.`)));
   const adj=j.feedback_points?h('span',{class:'adj'},`${j.feedback_points>0?'+':''}${Math.round(j.feedback_points)} from your feedback`):null;
   d.replaceChildren(

@@ -1,24 +1,32 @@
 # Scout
 
-A personal job recommender built on the idea behind Jobright, for two lanes Jobright doesn't serve:
+A job finder for people living in Nigeria, built on the idea behind Jobright. It covers two kinds of jobs Jobright doesn't:
 
-- **Global remote:** remote jobs someone living in Lagos can actually take
-- **Nigeria:** every Lagos job, whether on-site, hybrid or remote, plus remote roles anywhere in Nigeria. On-site and hybrid jobs in other cities are left out
+- **Nigeria:** on-site and hybrid jobs in your city, or anywhere you'd move to, plus remote jobs anywhere in Nigeria
+- **Global remote:** remote jobs abroad that someone living in Nigeria can actually take. These are optional
+
+It works for any line of work, not just tech: sales, marketing, customer service, finance, HR, operations or project management. Besides ranked jobs, it lists graduate trainee programmes and about a thousand Nigerian employers' own careers pages.
 
 Everything runs on your machine. Your CV never leaves it: matching uses a local embedding model.
+
+**Not a programmer?** Follow [GETTING-STARTED.md](GETTING-STARTED.md). It walks through installing and using Scout on Windows, step by step.
 
 ## Run it
 
 ```bash
+uv run scout setup      # answer a few questions and point it at your CV; writes profile.json
 uv run scout ingest     # fetch, classify, embed. First run is slow; later runs embed only new jobs
 uv run scout serve      # http://127.0.0.1:8787
+uv run scout start      # all of the above for everyday use: setup if needed, ingest once a day, then serve and open the browser
 ```
+
+On Windows, `setup.bat`, `start.bat` and `update.bat` do the same with a double-click.
 
 Run `ingest` about once a day. Skipping days is fine: a posting only closes once its board has fetched successfully for 3 days without it, so a missed run or a failing board never empties the list. Postings over 60 days old drop out too. Jobs you liked or applied to stay in those tabs, marked as closed.
 
 Each ingest also deletes jobs Scout has held for 60 days once they have closed or gone stale. Jobs you reacted to are kept: applied ones for your records, liked and "not for me" ones because the ranking learns from them. A job its board still lists with no posting date is kept as well, since deleting it would bring it straight back as new.
 
-**Trainee and internship programmes** have their own page at http://127.0.0.1:8787/programmes (the "Programmes" button). They come from jobs.revicemycv.com, whose strength is Nigerian graduate trainee schemes, and are not ranked, scored or used as feedback. Round-up posts ("multiple positions") are dropped unless they name a tech role. Programmes are sorted by deadline, read from the description, and drop off once it passes; undated ones follow, newest first. Mark them applied or hide them. They are deleted 60 days after Scout first saw them, unless you applied. `scout ingest --only programmes` refreshes just these.
+**Trainee and internship programmes** have their own page at http://127.0.0.1:8787/programmes (the "Programmes" button). They come from jobs.revicemycv.com, whose strength is Nigerian graduate trainee schemes, and are not ranked, scored or used as feedback. Round-up posts ("multiple positions") are dropped unless they name a role in one of your fields. Programmes are sorted by deadline, read from the description, and drop off once it passes; undated ones follow, newest first. Mark them applied or hide them. They are deleted 60 days after Scout first saw them, unless you applied. `scout ingest --only programmes` refreshes just these.
 
 In the Applied tab, give each application a status: no reply yet, in progress, rejected or hired. It's only for your own tracking and doesn't change the ranking.
 
@@ -31,14 +39,19 @@ uv run scout audit --lane global_remote --scope emea
 uv run scout reprocess                              # reclassify after editing the rules
 ```
 
-To change what it looks for, edit `profile.json` and restart `serve`:
+To change what it looks for, run `scout setup` again, or edit `profile.json` and restart `serve`. `profile.json` is yours and stays out of git; `profile.example.json` shows a filled-in one.
 
-- `primary_titles` are your main direction (frontend). `secondary_titles` still match, but rank lower.
+- `fields` are your lines of work: `tech`, `sales`, `marketing`, `customer`, `finance`, `hr_admin`, `operations` and `projects` (see `scout/fields.py`). They choose which Jobberman and MyJobMag pages are read, and which round-up programme posts are kept.
+- `skill_groups` choose the skill vocabulary: `tech`, `business`, or both. Skills outside them are ignored, both when scoring and when reading postings, so a developer isn't marked down for a posting that also asks for negotiation.
+- `primary_titles` are your main direction. `secondary_titles` still match, but rank lower.
 - `low_priority_title_terms` sinks roles with those words in the title. Embeddings rate "Backend Engineer" as nearly the same as "Frontend Engineer", so this needs saying outright.
-- `core_skills` is your main stack. Postings that miss it entirely get less skills credit.
+- `skills` must exist in `SKILLS` in `scout/matching.py`. Anything else goes in `custom_skills`, which match as whole phrases.
+- `core_skills` are your strongest. Postings that miss them entirely get less skills credit.
 - `level_range` is the seniority you'll take, from 0 (intern or trainee) to 5 (director). Everything in the range scores the same.
+- `home_city` is where you live, Lagos if unset. `relocate` is `"no"`, `"anywhere"` (in Nigeria) or a list of cities. Changing either needs `scout reprocess`, which `scout setup` runs for you.
+- `global_remote: false` skips the remote-only boards and hides the Global remote lane.
 
-Skills must exist in `SKILLS` in `scout/matching.py`. To follow more companies, add their slugs to the lists in `scout/sources.py`.
+A profile without the newer keys behaves as the original one did: tech, Lagos, not moving, global remote on. To follow more companies, add their slugs to the lists in `scout/sources.py`.
 
 ## How it works
 
@@ -64,7 +77,8 @@ ranker.py       Filter, apply feedback, diversify →  recommendations
 | "Pay for US-based staff is…" | Not a restriction, kept |
 | Overlap with US time zones | Kept, with a warning |
 | Time zones that exclude UTC+1 | Rejected |
-| Lagos, in any setup | Nigeria |
+| Your home city (Lagos unless set), in any setup | Nigeria |
+| On-site or hybrid in a city you said you'd move to, or anywhere in Nigeria if you said so | Nigeria |
 | On-site or hybrid elsewhere in Nigeria: Abuja, Port Harcourt, plain "Nigeria" | Rejected, as it would mean moving |
 | A Nigerian listing whose text says the role is remote | Nigeria, as remote |
 | "Remote, Nigeria" or "Remote - Abuja" | Nigeria, because the employer is hiring where you live |
@@ -73,7 +87,7 @@ ranker.py       Filter, apply feedback, diversify →  recommendations
 
 ## Finding companies' own careers pages (pilot)
 
-Many Nigerian employers never post to a job board. `scout companies` lists companies from public registers, finds each one's careers page and the hiring system behind it, and reports what it found. It doesn't add jobs to the feed yet.
+Many Nigerian employers never post to a job board. A finished crawl ships in `seeds/companies.json.gz`, and `scout start` loads it into `data/pilot.db` the first time, so nobody else has to crawl. `scout companies export` refreshes that file from your own `pilot.db`; it holds only what the registers and the crawl found, never your stars, notes or emails. `scout companies` lists companies from public registers, finds each one's careers page and the hiring system behind it, and reports what it found. It doesn't add jobs to the feed yet.
 
 ```bash
 uv run scout companies seed               # NGX, CBN, SEC, NCC and Wikidata
@@ -99,7 +113,7 @@ Each company ends up with one status: `ats` (Greenhouse, Lever, Workday, Success
 
 ## Emailing the companies that ask for CVs
 
-Scout can save cold emails as drafts in an Outlook.com account, with your CV attached, and mark a company as Emailed once you send its draft. It can't send anything: it only asks Microsoft for `Mail.ReadWrite`, not `Mail.Send`.
+This part is optional and set up by hand: the /pilot page only shows its controls once `data/outreach/config.json` exists. Scout can save cold emails as drafts in an Outlook.com account, with your CV attached, and mark a company as Emailed once you send its draft. It can't send anything: it only asks Microsoft for `Mail.ReadWrite`, not `Mail.Send`.
 
 ```bash
 uv run scout outreach login                    # once: open the link it prints and enter the code
@@ -126,7 +140,7 @@ From the public site and its public JavaScript bundle, without calling its priva
 
 - **Coverage is much smaller than Jobright's**, which advertises about 8 million jobs.
 - **Hybrid is undercounted for Nigerian jobs.** Board listings give short excerpts that rarely state the setup. "Lagos" without "Hybrid" means unstated, so it may be either.
-- **Nigerian places are a word list** in `scout/eligibility.py`: cities, states and Lagos areas. It decides whether a remote job is tied to Nigeria, and which postings get their text read for remote or hybrid wording. A place it doesn't know is treated as abroad. Names shared with places abroad only count with a qualifier ("Benin City", "Delta State"), and Lagos areas such as Maryland and Marina only count alongside "Lagos".
+- **Nigerian places are a word list** in `scout/eligibility.py`: cities, states and Lagos areas. Only Lagos has its areas listed, so a home city elsewhere is matched by its name alone. It decides whether a remote job is tied to Nigeria, and which postings get their text read for remote or hybrid wording. A place it doesn't know is treated as abroad. Names shared with places abroad only count with a qualifier ("Benin City", "Delta State"), and Lagos areas such as Maryland and Marina only count alongside "Lagos".
 - **Nigeria scores are rougher** because they're based on those excerpts rather than full postings.
 - **Eligibility is rule-based and will sometimes be wrong.** Boards' labels can't always be trusted, and the rules only catch restrictions phrased in ways they recognise. Read the posting before applying. `scout audit` shows every decision.
 - **Workday boards only return their Nigerian openings,** found through the board's own country or city filter. A board with nothing in Nigeria returns nothing.

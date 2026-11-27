@@ -724,9 +724,10 @@ def freshteam() -> Iterable[RawJob]:
 
 
 # ---------- Lagos boards (HTML listing pages and feeds; excerpts only) ----------
-# Tech-focused listings first, then the general Lagos feed.
-JOBBERMAN_PAGES = ["/jobs/lagos/software-data", "/jobs/software-data", "/jobs/lagos"]
+# Your field's listings first, then your city's general feed. scout.fields sets these from profile.json.
+JOBBERMAN_PAGES = ["/jobs/software-data/lagos", "/jobs/software-data", "/jobs/lagos"]
 MYJOBMAG_PAGES = ["/jobs-by-field/information-technology", "/jobs-location/lagos"]
+REMOTE_BOARDS = {"himalayas", "remotive", "remoteok", "jobicy", "weworkremotely"}  # Only remote jobs, almost all abroad.
 
 
 def parse_jobberman(page: str) -> Iterable[RawJob]:

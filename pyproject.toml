@@ -1,7 +1,7 @@
 [project]
 name = "scout"
 version = "0.1.0"
-description = "Personal job recommender: global remote roles and Lagos hybrid/onsite roles"
+description = "Job finder for people in Nigeria: local on-site, hybrid and remote roles, global remote roles, trainee programmes and employers' own careers pages"
 requires-python = ">=3.12"
 dependencies = ["fastembed>=0.5", "numpy", "pypdf"]
 

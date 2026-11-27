@@ -1,0 +1,56 @@
+{
+  "name": "Ada Example",
+  "fields": [
+    "sales"
+  ],
+  "skill_groups": [
+    "business"
+  ],
+  "primary_titles": [
+    "Sales Executive",
+    "Business Development Executive",
+    "Relationship Officer",
+    "Key Account Executive"
+  ],
+  "secondary_titles": [
+    "Marketing Executive",
+    "Customer Success Manager"
+  ],
+  "low_priority_title_terms": [
+    "driver",
+    "van sales",
+    "cashier"
+  ],
+  "summary": "Sales executive with four years in FMCG and fintech sales in Lagos. Manages key accounts and distributor relationships, prospects new B2B clients and closes against monthly targets. Wants a business development or key account role with a growing company.",
+  "skills": [
+    "b2b sales",
+    "negotiation",
+    "crm",
+    "key account management",
+    "lead generation",
+    "fmcg sales",
+    "excel",
+    "microsoft office"
+  ],
+  "custom_skills": [],
+  "core_skills": [
+    "b2b sales",
+    "key account management",
+    "negotiation"
+  ],
+  "years_experience": 4,
+  "level_range": [
+    1,
+    3
+  ],
+  "industries": [
+    "fmcg",
+    "fintech",
+    "telecoms",
+    "banking"
+  ],
+  "exclude_companies": [],
+  "home_city": "Lagos",
+  "relocate": "no",
+  "global_remote": false
+}

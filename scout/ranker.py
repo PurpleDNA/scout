@@ -53,6 +53,7 @@ class Ranker:
         disliked = store.dislikes(self.db)
         scores = score_jobs(self.jobs, self.titles, self.texts, self.profile, liked, disliked)
         excluded = {c.lower() for c in self.profile.data.get("exclude_companies", [])}
+        abroad = self.profile.data.get("global_remote", True)  # False: remote jobs abroad aren't wanted at all.
         terms = query.lower().split()
         cutoff = (datetime.now(timezone.utc) - timedelta(days=posted_within)).isoformat() if posted_within else None
         states = [f["action"] for f in fb.values()]
@@ -62,6 +63,8 @@ class Ranker:
             mark = fb.get(job["id"])
             state = mark["action"] if mark else None
             if not tracking and (job["closed"] or job["stale"]):
+                continue
+            if job["lane"] == "global_remote" and not abroad and not tracking:
                 continue
             if job["company"].lower() in excluded and not tracking:
                 continue

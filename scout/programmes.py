@@ -37,6 +37,7 @@ _INTERN = re.compile(r"\b(intern(ship)?s?|nysc|corps members?|siwes|industrial t
 _ROUNDUP = re.compile(r"\b(multiple|several|various)\s+(positions|roles|openings|vacancies|job)|\bcheck vacanc", re.I)
 _TECH = re.compile(r"\b(software|developers?|front[- ]?end|back[- ]?end|full[- ]?stack|web develop\w*|devops|data (analyst|engineer|scien\w+)|"
                    r"cyber ?security|ui/ux|product design\w*|information technology|ICT)\b", re.I)
+ROUNDUP_ROLES = _TECH  # Round-up posts are kept when they name one of these. scout.fields sets it from your profile.
 _MONTHS = "january|february|march|april|may|june|july|august|september|october|november|december"
 _MON = r"(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*"
 _DAY_FIRST = re.compile(rf"(\d{{1,2}})(?:st|nd|rd|th)?\s+(?:of\s+)?{_MON},?\s+(\d{{4}})", re.I)
@@ -90,7 +91,7 @@ def _is_scholarship(item: dict) -> bool:
 
 
 def wanted(item: dict) -> bool:
-    """Trainee and internship schemes, and scholarships. Round-up posts (“multiple positions”) only when they name a tech role."""
+    """Trainee and internship schemes, and scholarships. Round-up posts (“multiple positions”) only when they name a role in your field."""
     if _is_scholarship(item):
         return True
     if (item.get("post_type") or "job") != "job" or _NOT_A_JOB.search(item.get("category") or ""):
@@ -99,7 +100,7 @@ def wanted(item: dict) -> bool:
     if not _PROGRAMME.search(label):
         return False
     if _ROUNDUP.search(item.get("title") or ""):
-        return bool(_TECH.search(f"{item.get('title') or ''} {text_of(item.get('description'))}"))
+        return bool(ROUNDUP_ROLES.search(f"{item.get('title') or ''} {text_of(item.get('description'))}"))
     return True
 
 

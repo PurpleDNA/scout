@@ -109,7 +109,7 @@ td.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
   <div class="filters">
     <label class="field">Show<select id="action">
       <option value="open">To do (untouched or watching)</option><option value="none">Untouched</option>
-      <option value="draft">Draft waiting</option><option value="emailed">Emailed</option><option value="applied">Applied</option>
+      <option value="draft" id="draftOpt">Draft waiting</option><option value="emailed">Emailed</option><option value="applied">Applied</option>
       <option value="watching">Watching</option><option value="skip">Not for me</option><option value="">Everything</option>
     </select></label>
     <label class="field">Industry<select id="industry"></select></label>
@@ -255,7 +255,7 @@ function render(){
   const emails=[...new Set(rows.flatMap(c=>c.emails.slice(0,1)))];
   const copyAll=emails.length?h('button',{class:'btn',title:'The first (hiring) address of each company listed',onclick(ev){copy(emails.join(', '),ev.currentTarget)}},`Copy ${emails.length} addresses`):null;
   const hint=state.group==='none'?h('span',{},'No careers page was found. Check the site’s contact or about page, or email them.'):null;
-  const check=state.group==='email'?h('button',{class:'btn',title:'Look through Outlook Sent Items and mark what went out as Emailed',onclick(ev){syncSent(ev.currentTarget)}},'Check Outlook for sent'):null;
+  const check=state.group==='email'&&data.outreach?h('button',{class:'btn',title:'Look through Outlook Sent Items and mark what went out as Emailed',onclick(ev){syncSent(ev.currentTarget)}},'Check Outlook for sent'):null;
   $('count').replaceChildren(...[h('span',{},`${fmt(rows.length)} compan${rows.length===1?'y':'ies'}`),copyAll,check,hint].filter(Boolean));
   $('list').replaceChildren(...(rows.length?rows.slice(0,state.shown).map(card):[h('li',{class:'empty'},'Nothing matches these filters.')]));
   $('more').hidden=rows.length<=state.shown;$('more').textContent=`Show more (${fmt(rows.length-state.shown)} left)`;
@@ -278,7 +278,7 @@ let t;$('q').oninput=e=>{clearTimeout(t);t=setTimeout(()=>{state.q=e.target.valu
 for(const id of ['action','industry','register','sort'])$(id).onchange=e=>{state[id]=e.target.value;state.shown=PAGE;render()};
 for(const id of ['starred','noGuess'])$(id).onchange=e=>{state[id]=e.target.checked;state.shown=PAGE;render()};
 
-fetch('/api/pilot').then(async r=>{const body=await r.json();if(!r.ok)throw new Error(body.error||r.status);data=body;await migrate();render()})
+fetch('/api/pilot').then(async r=>{const body=await r.json();if(!r.ok)throw new Error(body.error||r.status);data=body;if(!data.outreach)$('draftOpt').remove();await migrate();render()})
   .catch(e=>{$('list').replaceChildren(h('li',{class:'error'},'Couldn’t load the pilot: ',e.message))});
 </script>
 </body>

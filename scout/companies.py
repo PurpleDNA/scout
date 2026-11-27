@@ -10,6 +10,7 @@ honest User-Agent, robots.txt respected, one company per worker, a few requests 
 from __future__ import annotations
 
 import csv
+import gzip
 import html
 import json
 import re
@@ -26,6 +27,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from html.parser import HTMLParser
+from pathlib import Path
 
 from .sources import USER_AGENT
 
@@ -941,3 +943,37 @@ def pilot_view(db: sqlite3.Connection) -> dict:
         "last_checked": max((r["checked_at"] for r in checked if r["checked_at"]), default=None),
         "companies": sorted(shown, key=lambda c: c["name"].lower()),
     }
+
+
+# ---------- the list that ships with Scout ----------
+# The crawl takes over half an hour, so a finished one is kept in the repo. Only what the registers and the
+# crawl found: none of your stars, notes, actions or emails, which live in other tables.
+SEED = Path(__file__).resolve().parent.parent / "seeds" / "companies.json.gz"
+SEED_COLUMNS = ("key", "name", "website", "website_guessed", "industry", "industry_raw", "sources",
+                "status", "careers_url", "ats", "ats_slug", "note", "checked_at")
+
+
+def export_seed(db: sqlite3.Connection, path: Path = SEED) -> int:
+    rows = [dict(zip(SEED_COLUMNS, r)) for r in db.execute(f"SELECT {', '.join(SEED_COLUMNS)} FROM companies ORDER BY key")]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with gzip.open(path, "wt", encoding="utf-8") as f:
+        json.dump(rows, f, ensure_ascii=False, separators=(",", ":"))
+    return len(rows)
+
+
+def load_seed(db_path: Path, path: Path = SEED) -> int:
+    """Add the shipped companies that db_path doesn't have yet. Companies already there are left as they are."""
+    if not path.exists():
+        return 0
+    with gzip.open(path, "rt", encoding="utf-8") as f:
+        rows = json.load(f)
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    db = connect(sqlite3.connect(db_path))
+    try:
+        before = db.execute("SELECT COUNT(*) FROM companies").fetchone()[0]
+        db.executemany(f"INSERT OR IGNORE INTO companies ({', '.join(SEED_COLUMNS)}) VALUES ({', '.join('?' * len(SEED_COLUMNS))})",
+                       [tuple(r.get(c) for c in SEED_COLUMNS) for r in rows])
+        db.commit()
+        return db.execute("SELECT COUNT(*) FROM companies").fetchone()[0] - before
+    finally:
+        db.close()

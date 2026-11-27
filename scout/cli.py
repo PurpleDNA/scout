@@ -6,7 +6,7 @@ import sys
 import time
 from pathlib import Path
 
-from . import programmes, store
+from . import fields, programmes, store
 from .sources import SOURCES
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -17,7 +17,8 @@ PROFILE = ROOT / "profile.json"
 
 def cmd_ingest(args) -> int:
     db = store.connect(DB)
-    names = [n for n in args.only if n in SOURCES] if args.only else list(SOURCES)
+    skipped = fields.skipped_sources(fields.load(PROFILE) or {})
+    names = [n for n in args.only if n in SOURCES] if args.only else [n for n in SOURCES if n not in skipped]
     failed = []
     for name in names:
         started = time.time()
@@ -34,7 +35,7 @@ def cmd_ingest(args) -> int:
         note = f"  PARTIAL/FAILED: {error!r}"[:140] if error else ""
         print(f"{name:16}{len(jobs):6} jobs  {time.time() - started:5.1f}s{note}", flush=True)
     if not args.only:  # A source taken out of SOURCES never fetches again, so its listings start closing from today.
-        for gone in set(store.source_clocks(db)) - set(SOURCES):
+        for gone in set(store.source_clocks(db)) - (set(SOURCES) - skipped):
             store.mark_fetched(db, gone, store.now_iso())
     if not args.only or "programmes" in args.only:
         started = time.time()
@@ -109,6 +110,9 @@ def cmd_companies(args) -> int:
         tally = companies.crawl(db, rows, args.workers, progress=lambda line: print(line, flush=True))
         print(dict(tally.most_common()))
         return 0
+    if args.action == "export":
+        print(f"{companies.export_seed(db)} companies written to {companies.SEED}")
+        return 0
     if args.action == "report":
         print(companies.report(db, args.industry))
         return 0
@@ -123,7 +127,7 @@ def cmd_outreach(args) -> int:
     import sqlite3
     from . import outreach
     folder = PILOT_DB.parent / "outreach"
-    emails, config = (json.loads((folder / f).read_text()) for f in ("emails.json", "config.json"))
+    emails, config = (json.loads((folder / f).read_text(encoding="utf-8")) for f in ("emails.json", "config.json"))
     db = sqlite3.connect(PILOT_DB)
     db.row_factory = sqlite3.Row
     try:
@@ -161,8 +165,48 @@ def cmd_outreach(args) -> int:
 def cmd_serve(args) -> int:
     from .ranker import Ranker
     from .server import serve
+    if not PROFILE.exists():
+        print("No profile.json yet. Run `scout setup` first.")
+        return 1
     serve(Ranker(store.connect(DB), PROFILE), args.port, PILOT_DB)
     return 0
+
+
+def cmd_setup(_) -> int:
+    from . import setup
+    if not setup.run(PROFILE):
+        return 1
+    fields.configure(fields.load(PROFILE))
+    if DB.exists():  # Where you'd work may have changed, so sort the stored jobs again.
+        print("Re-sorting the jobs Scout already has for your new answers...")
+        print(store.reprocess(store.connect(DB)))
+    return 0
+
+
+def cmd_start(args) -> int:
+    """For everyday use: set up if needed, fetch today's jobs if that hasn't happened yet, then open the app."""
+    import threading
+    import webbrowser
+    from datetime import datetime
+    from . import companies
+    if not PROFILE.exists() and cmd_setup(args):
+        return 1
+    added = companies.load_seed(PILOT_DB)
+    if added:
+        print(f"Added {added} companies to the Companies page.")
+    db = store.connect(DB)
+    row = db.execute("SELECT value FROM meta WHERE key='last_ingest'").fetchone()
+    last = datetime.fromisoformat(row["value"]).astimezone().date() if row else None
+    db.close()
+    if last != datetime.now().date():
+        print("Fetching today's jobs." + (" The first time takes 15 to 30 minutes; later days are quicker."
+                                          if last is None else " This takes a few minutes."))
+        print("Leave this window open. The app opens in your browser when it's done.\n", flush=True)
+        cmd_ingest(argparse.Namespace(only=None))
+    url = f"http://127.0.0.1:{args.port}"
+    threading.Timer(1.5, webbrowser.open, (url,)).start()
+    print(f"\nScout is open at {url}. Keep this window open while you use it; close it to stop Scout.")
+    return cmd_serve(args)
 
 
 def main() -> None:
@@ -184,7 +228,7 @@ def main() -> None:
     s.set_defaults(fn=cmd_audit)
     sub.add_parser("misreads", help="jobs you marked as not open to you").set_defaults(fn=cmd_misreads)
     s = sub.add_parser("companies", help="find employers' own careers pages (pilot)")
-    s.add_argument("action", choices=["seed", "crawl", "report", "list"])
+    s.add_argument("action", choices=["seed", "crawl", "report", "list", "export"])
     s.add_argument("--mfbs", action="store_true", help="seed: include CBN's ~790 microfinance banks")
     s.add_argument("--all", action="store_true", help="crawl: recheck companies checked in the last week too")
     s.add_argument("--limit", type=int, help="crawl: at most this many companies")
@@ -200,5 +244,10 @@ def main() -> None:
     s = sub.add_parser("serve", help="run the web app")
     s.add_argument("--port", type=int, default=8787)
     s.set_defaults(fn=cmd_serve)
+    sub.add_parser("setup", help="answer a few questions to write profile.json").set_defaults(fn=cmd_setup)
+    s = sub.add_parser("start", help="set up if needed, fetch today's jobs once, open the app")
+    s.add_argument("--port", type=int, default=8787)
+    s.set_defaults(fn=cmd_start)
     args = p.parse_args()
+    fields.configure(fields.load(PROFILE) or {})
     sys.exit(args.fn(args))

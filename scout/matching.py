@@ -34,13 +34,92 @@ SKILLS: dict[str, str] = {
     "pwa": r"\bpwas?\b|progressive web|offline[- ]first", "sass": r"\bsass\b|\bscss\b", "vite": r"\bvite\b", "webpack": r"webpack",
     "web3": r"\bweb3\b|blockchain|solidity", "figma": r"\bfigma\b", "salesforce": r"salesforce", "hubspot": r"hubspot", "excel": r"\bexcel\b", "seo": r"\bseo\b",
 }
+# Sales, marketing, customer service, finance, HR and operations. Only profiles whose skill_groups include "business"
+# read these, so a developer's skill scores don't change when a posting also mentions, say, negotiation.
+BUSINESS_SKILLS: dict[str, str] = {
+    "b2b sales": r"\bb2b\b|business[- ]to[- ]business", "b2c sales": r"\bb2c\b|direct[- ]to[- ]consumer|retail sales",
+    "field sales": r"field sales|field (agent|marketer|representative)s?|door[- ]to[- ]door|market storm",
+    "telesales": r"telesales|tele[- ]?marketing|cold[- ]?call", "key account management": r"key accounts?|\bkam\b",
+    "account management": r"account management|client portfolio|portfolio management|relationship management",
+    "business development": r"business development|new business|\bbd\b(?= (manager|executive|officer))",
+    "lead generation": r"lead generation|prospecting|generate leads|sales pipeline|pipeline management",
+    "negotiation": r"negotiat", "closing deals": r"clos(e|ing) (deals|sales)|deal closing", "sales targets": r"sales targets?|\bquota\b|revenue targets?",
+    "crm": r"\bcrm\b|customer relationship management|zoho crm|pipedrive", "salesforce": r"salesforce", "hubspot": r"hubspot",
+    "sales reporting": r"sales report|sales forecast|sales analysis", "distribution": r"distributors?|distribution channels?|route to market|\brtm\b",
+    "merchandising": r"merchandis", "trade marketing": r"trade marketing|\bbtl\b|below[- ]the[- ]line|activations?\b",
+    "channel sales": r"channel (sales|partners?)|dealers? network|reseller", "van sales": r"van sales",
+    "product knowledge": r"product knowledge|product demonstrations?", "presentation": r"presentation skills|pitch(ing)?\b",
+    "customer service": r"customer (service|care|support|experience)|client service", "complaint resolution": r"complaints?|resolve (issues|disputes)",
+    "marketing": r"\bmarketing (strategy|campaigns?|plans?)|brand (management|awareness)", "digital marketing": r"digital marketing|online marketing|performance marketing",
+    "social media marketing": r"social media (marketing|management|manager|handler|campaigns?)|community management",
+    "content creation": r"content (creation|creator|writing|marketing)|copywrit", "seo": r"\bseo\b", "email marketing": r"email marketing|mailchimp",
+    "google ads": r"google ads|adwords|\bppc\b|paid (media|search|social)", "market research": r"market (research|survey|intelligence)|competitor analysis",
+    "event planning": r"event (planning|management)|exhibitions?", "public relations": r"public relations|\bpr\b(?= (agency|manager|executive))",
+    "excel": r"\bexcel\b|spreadsheets?", "microsoft office": r"microsoft office|ms office|powerpoint|\bword\b(?=,| and| processing)",
+    "data analysis": r"data analysis|analytics|power bi|tableau", "bookkeeping": r"bookkeep|accounts? (payable|receivable)|reconciliation",
+    "accounting": r"\baccounting\b|\bica(n)?\b|\bacca\b|financial statements|\bifrs\b", "budgeting": r"budget(ing)?\b|forecasting",
+    "cash handling": r"cash (handling|management)|\bcashier", "credit and loans": r"\bcredit (analysis|risk|officer)|loans?\b|recover(y|ies) of",
+    "kyc": r"\bkyc\b|know your customer|\baml\b", "insurance sales": r"insurance (sales|agent|advisor|products)|underwrit",
+    "recruitment": r"recruit|talent acquisition|onboarding", "payroll": r"payroll", "hr administration": r"hr (administration|operations)|employee relations|\bhris\b",
+    "office administration": r"office (administration|management)|front desk|reception|secretar", "inventory": r"inventory|stock (control|management)|warehous",
+    "procurement": r"procure|purchasing|sourcing|vendor management", "logistics": r"logistics|dispatch|fleet management|last[- ]mile",
+    "supply chain": r"supply chain", "project management": r"project management|\bpmp\b|prince2", "team leadership": r"team (lead|leadership|management)|supervis|manage a team",
+    "training": r"train(ing)? (staff|teams|sales)|coaching", "erp": r"\berp\b|\bsap\b|odoo|dynamics 365",
+    "point of sale": r"\bpos\b|point of sale", "driving": r"driv(er'?s|ing) licen[cs]e|valid (driver|driving)",
+    "fmcg sales": r"\bfmcg\b|consumer goods", "real estate sales": r"real estate|property (sales|management)|realtor",
+    "banking products": r"retail banking|deposit mobili[sz]ation|current accounts?|\bcasa\b", "telecoms sales": r"airtime|sim (cards?|registration)|data bundles?",
+    "pharma sales": r"medical (rep|representative|sales)|pharmaceutical sales|detailing",
+}
+TECH_SKILLS = dict(SKILLS)
+SKILL_GROUPS = {"tech": set(TECH_SKILLS), "business": set(BUSINESS_SKILLS) | {"excel", "salesforce", "hubspot", "seo", "figma", "sql"}}
+SKILLS.update({k: v for k, v in BUSINESS_SKILLS.items() if k not in SKILLS})
 _SKILL_RX = {k: re.compile(v, re.I) for k, v in SKILLS.items()}
+
+
+# The skills ingest looks for. Each regex costs time on every posting, so only the profile's groups are read.
+# scout.fields sets this from profile.json; changing groups needs a `scout reprocess`, which `scout setup` runs.
+ACTIVE_SKILLS: set[str] = set(SKILL_GROUPS["tech"])
+
+
+def set_active_skills(names: set[str]) -> None:
+    global ACTIVE_SKILLS
+    ACTIVE_SKILLS = set(names)
+
+
+def add_custom_skills(names: list[str]) -> list[str]:
+    """Skills a profile names that SKILLS doesn't know. Each matches as a whole phrase. Returns their names."""
+    added = []
+    for name in names:
+        key = " ".join(name.lower().split())
+        if key and key not in SKILLS:
+            SKILLS[key] = rf"(?<!\w){re.escape(key)}(?!\w)"
+            _SKILL_RX[key] = re.compile(SKILLS[key], re.I)
+        if key:
+            ACTIVE_SKILLS.add(key)
+            added.append(key)
+    return added
+
+
+def vocabulary(profile: dict) -> set[str]:
+    """The skills that count for this profile: its skill groups, plus whatever it lists itself."""
+    groups = profile.get("skill_groups") or ["tech"]
+    return set().union(*(SKILL_GROUPS[g] for g in groups if g in SKILL_GROUPS)) | set(profile.get("skills", []))
 
 INDUSTRIES: dict[str, str] = {
     "fintech": r"fintech|payments?\b|banking|neobank|lending", "ai": r"\bai\b|artificial intelligence|machine learning",
     "developer tools": r"developer tools?|devtools|developer platform|open[- ]source", "social media": r"social (media|network|platform)|creator",
     "media": r"streaming|video platform|media platform", "gaming": r"\bgaming\b|\bgames?\b|esports", "web3": r"web3|crypto|blockchain",
     "healthcare": r"healthcare|healthtech", "e-commerce": r"e-?commerce|marketplace", "edtech": r"edtech", "saas": r"\bsaas\b",
+    # Industries name what the employer does. Benefits ("health insurance") and prose ("construction of") shouldn't count.
+    "fmcg": r"\bfmcg\b|consumer goods|beverage (company|brand|industry)|household products", "banking": r"\bbanking\b|\ba (commercial |microfinance )?bank\b|microfinance",
+    "insurance": r"insurance (company|firm|industry|products|broker|sales)|\binsurer\b|underwrit|insurtech",
+    "telecoms": r"telecom|mobile network operator|internet service provider", "real estate": r"real estate|property (development|developer|management)",
+    "oil and gas": r"oil and gas|oil & gas|petroleum|\bupstream\b|\bdownstream\b", "logistics": r"logistics (company|firm|industry|provider)|haulage|courier",
+    "manufacturing": r"manufacturing (company|firm|industry|plant)|\bfactory\b|production plant", "pharmaceutical": r"pharmaceutical|\bpharma\b",
+    "retail": r"\bretail (company|chain|stores?|industry|business)|supermarket", "hospitality": r"\bhotels?\b|hospitality|\brestaurants?\b",
+    "automotive": r"automotive|car dealer", "consulting": r"consulting firm|consultancy|advisory firm|management consulting",
+    "agriculture": r"agricultur|agro-?allied|agribusiness", "education": r"\bschools?\b(?! of)|education (sector|company|industry|provider)",
+    "construction": r"construction (company|firm|industry|projects?|sites?)|building materials|\bcement\b", "advertising": r"advertising agency|ad agency|media buying",
 }
 _INDUSTRY_RX = {k: re.compile(v, re.I) for k, v in INDUSTRIES.items()}
 
@@ -72,16 +151,36 @@ def embed(texts: list[str]) -> np.ndarray:
     return vecs / np.maximum(np.linalg.norm(vecs, axis=1, keepdims=True), 1e-9)
 
 
-def extract_skills(text: str) -> list[str]:
-    return sorted(k for k, rx in _SKILL_RX.items() if rx.search(text))
+def extract_skills(text: str, names: set[str] | None = None) -> list[str]:
+    """The skills a text mentions, out of `names` (by default, the ones this profile reads)."""
+    names = ACTIVE_SKILLS if names is None else names
+    return sorted(k for k, rx in _SKILL_RX.items() if k in names and rx.search(text))
 
 
 def extract_industries(text: str) -> list[str]:
     return sorted(k for k, rx in _INDUSTRY_RX.items() if rx.search(text))
 
 
+# "Relationship Manager" and "Account Manager" are usually mid-level jobs in their own right, not managers of people.
+_MID_MANAGER = re.compile(r"\b(account|relationship|sales|territory|area|regional sales|brand|trade marketing|business development|"
+                          r"key account|customer success|community|marketing|store|branch|social media|client|portfolio|"
+                          r"field sales|channel|distributor|retail|shop|outlet|e-?commerce)\s+manager\b", re.I)
+
+
+MID_MANAGERS = False  # On for business profiles (scout.fields). A developer's feed reads every "manager" as level 4, as before.
+
+
+def set_mid_managers(on: bool) -> None:
+    global MID_MANAGERS
+    if on != MID_MANAGERS:
+        MID_MANAGERS = on
+        job_level.cache_clear()
+
+
 @lru_cache(maxsize=50_000)  # Job text never changes, and this runs for every job on every click.
 def job_level(title: str) -> float | None:
+    if MID_MANAGERS and not re.search(_LEVELS[0][1], title, re.I) and _MID_MANAGER.search(title):
+        return 3.0 if re.search(r"\b(senior|sr\.?)\b", title, re.I) else 2.0
     for level, pattern in _LEVELS:
         if re.search(pattern, title, re.I):
             return float(level)
@@ -117,7 +216,8 @@ class Profile:
 
     @classmethod
     def load(cls, path: Path) -> "Profile":
-        data = json.loads(path.read_text())
+        data = json.loads(path.read_text(encoding="utf-8"))
+        add_custom_skills(data.get("custom_skills", []))
         data["skills"] = [s.lower() for s in data["skills"]]
         unknown = [s for s in data["skills"] if s not in SKILLS]
         if unknown:
@@ -186,6 +286,7 @@ def score_jobs(jobs: list[dict], title_vecs: np.ndarray, text_vecs: np.ndarray, 
     role = _scale(role_sim, 0.55, 0.88)
     fit = _scale(text_vecs @ profile.summary_vec, 0.42, 0.78)
     have, my_industries = set(profile.data["skills"]), set(profile.data["industries"])
+    vocab = vocabulary(profile.data)  # Skills outside the profile's field are neither credit nor gaps.
     core = set(profile.data.get("core_skills", []))
 
     d = disliked if isinstance(disliked, Dislikes) else Dislikes(general=disliked)
@@ -199,7 +300,7 @@ def score_jobs(jobs: list[dict], title_vecs: np.ndarray, text_vecs: np.ndarray, 
 
     out = []
     for i, job in enumerate(jobs):
-        wanted = set(job["skills"])
+        wanted = set(job["skills"]) & vocab
         sen, years = seniority_fit(job["title"], job["description"], profile.data)
         level = job_level(job["title"])
         too_senior = ((d.level is not None and level is not None and level >= d.level)

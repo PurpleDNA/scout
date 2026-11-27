@@ -43,6 +43,41 @@ NIGERIAN_PLACE = _rx(
     r"birnin[- ]kebbi|gusau|sapele|sagamu|shagamu|ota|ijebu[- ]ode|nnewi|eket|bonny|onne|ikot ekpene|zaria|suleja|"
     r"oyo|ogun|osun|ondo|ekiti|kwara|kogi|benue|edo|imo|abia|anambra|ebonyi|bayelsa|akwa ibom|cross river|nasarawa|"
     r"taraba|adamawa|borno|yobe|jigawa|kebbi|zamfara|rivers state|delta state|niger state|plateau state)\b")
+
+
+@dataclass
+class Area:
+    """Where on-site and hybrid work is open to you: your home city, plus anywhere you said you'd move to."""
+    label: str = "Lagos"
+    home: re.Pattern = LAGOS
+    also: re.Pattern | None = None  # Other places you'd move to.
+    anywhere: bool = False  # Anywhere in Nigeria.
+
+    @property
+    def slug(self) -> str:
+        return self.label.lower()
+
+
+def _places(names: list[str]) -> re.Pattern:
+    parts = [LAGOS.pattern if n.strip().lower() == "lagos" else rf"\b{re.escape(n.strip())}\b" for n in names if n.strip()]
+    return _rx("|".join(f"(?:{p})" for p in parts))
+
+
+def area_for(home: str = "Lagos", relocate: str | list[str] = "no") -> Area:
+    """`relocate` is "no", "anywhere" (in Nigeria) or a list of places."""
+    home = home.strip() or "Lagos"
+    also = relocate if isinstance(relocate, list) and relocate else None
+    return Area(home, _places([home]), _places(also) if also else None, relocate == "anywhere")
+
+
+AREA = Area()
+
+
+def set_area(area: Area) -> None:
+    global AREA
+    AREA = area
+
+
 WORLDWIDE = _rx(r"\b(world\s?wide|anywhere|global(ly)?|international)\b")
 AFRICA = _rx(r"(?<!south )(?<!north )(?<!east )(?<!west )\bafrica\b|\bsub-saharan\b")
 EMEA = _rx(r"\bemea\b")
@@ -154,25 +189,28 @@ def classify(*, location: str = "", workplace: str | None = None, restrictions: 
              timezones: list[float] | None = None, description: str = "", title: str = "",
              remote_board: bool = False) -> Eligibility:
     location = location or ""
-    in_lagos = bool(LAGOS.search(location))
-    in_nigeria = in_lagos or bool(NIGERIAN_PLACE.search(location))
+    area = AREA
+    in_lagos = bool(area.home.search(location))  # Your home city: Lagos unless your profile says otherwise.
+    in_nigeria = in_lagos or bool(LAGOS.search(location)) or bool(NIGERIAN_PLACE.search(location))
+    would_move = in_nigeria and not in_lagos and (area.anywhere or bool(area.also and area.also.search(location)))
     model = _work_model(location, workplace, description, remote_board, in_nigeria)
     flags = ("us_hours",) if US_HOURS.search(description) else ()
 
     # Local remote: an employer naming a Nigerian place is hiring where you live, so it belongs in the Nigeria lane.
     if model == "remote" and restrictions is None and in_nigeria:
         if _covers_home_tz(timezones):
-            return Eligibility("nigeria", model, "lagos" if in_lagos else "nigeria", "high", f"Location: “{location}”", flags)
+            return Eligibility("nigeria", model, area.slug if in_lagos else "nigeria", "high", f"Location: “{location}”", flags)
 
-    # Going into an office means living near it, so on-site and hybrid work only counts in Lagos.
+    # Going into an office means living near it, so on-site and hybrid work only counts at home, or where you'd move.
     if model != "remote":
-        if in_lagos:
-            evidence = f"Location: “{location}”"
+        if in_lagos or would_move:
+            evidence = f"Location: “{location}”" + ("" if in_lagos else f", outside {area.label}, where you said you'd move")
             if model == "onsite" and not workplace:
                 evidence += ". The listing doesn't mention remote or hybrid, so check the posting."
-            return Eligibility("nigeria", model, "lagos", "high", evidence, flags)
+            return Eligibility("nigeria", model, area.slug if in_lagos else "nigeria", "high", evidence, flags)
+        outside = area.label if not (area.also or area.anywhere) else f"{area.label} and the places you'd move to"
         return Eligibility("rejected", model, "nigeria" if in_nigeria else "elsewhere", "high",
-                           f"{model.capitalize()} outside Lagos: “{location or 'no location given'}”", flags)
+                           f"{model.capitalize()} outside {outside}: “{location or 'no location given'}”", flags)
 
     def rejected(scope: str, why: str) -> Eligibility:
         return Eligibility("rejected", model, scope, "high", why, flags)
